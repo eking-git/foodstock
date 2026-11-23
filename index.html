@@ -47,6 +47,8 @@ textarea{height:150px}
 #scanvideo{width:100%;max-height:45%;background:#000}
 .sres{background:#fff;color:#222;padding:10px;margin-top:10px;border-radius:4px}
 .sres .btn{margin-bottom:6px}
+.alert{background:#ffebee;border:1px solid #c62828;color:#7f0000;padding:10px;margin:0 0 8px;font-size:14px}
+.alert b{display:block;margin-bottom:3px}
 </style>
 </head>
 <body>
@@ -63,6 +65,7 @@ textarea{height:150px}
   </div>
 
   <div class="tab" id="tab-stock" style="display:block">
+    <div id="alerts"></div>
     <button class="btn blue" data-a="scanmain" style="width:100%;margin:0 0 8px;font-size:18px">Scan barcode (add / update)</button>
     <input type="text" id="q" placeholder="Search item, category, location, barcode...">
     <div style="height:6px"></div>
@@ -114,9 +117,19 @@ textarea{height:150px}
 
   <div class="tab" id="tab-backup">
     <h3 style="margin:6px 0">Settings</h3>
-    <label>Warn when expiring within (days)</label>
+    <label>Remind me this many days before expiry</label>
+    <input type="number" id="s-notify" min="1" value="7">
+    <label>Show "expiring soon" badge within (days)</label>
     <input type="number" id="s-soon" min="1" value="60">
-    <button class="btn" data-a="savesettings">Save setting</button>
+    <button class="btn" data-a="savesettings">Save settings</button>
+    <h3 style="margin:18px 0 6px">Expiry reminders</h3>
+    <button class="btn blue" data-a="notify">Enable notifications</button>
+    <div class="hint" id="notifystat"></div>
+    <button class="btn blue" data-a="ics">Download calendar reminders (.ics)</button>
+    <div class="hint">Most reliable: adds each expiry date to your phone calendar with an alert. Open the downloaded file and choose Calendar. Download again after you add or change items.</div>
+    <h3 style="margin:18px 0 6px">Usage history</h3>
+    <button class="btn blue" data-a="usage">Show usage (last 30 days)</button>
+    <div id="usagebox"></div>
     <h3 style="margin:18px 0 6px">Backup and transfer</h3>
     <div class="hint">Your data lives only in this browser. Make a backup now and then, and use it to move your stock to another phone or tablet.</div>
     <button class="btn blue" data-a="export">Create backup text</button>
@@ -189,6 +202,7 @@ textarea{height:150px}
   function save() {
     try { window.localStorage.setItem(KEY, JSON.stringify(data)); }
     catch (e) { $('warn').style.display = 'block'; }
+    mirror();
   }
   var msgTimer = null;
   function toast(t) {
@@ -291,6 +305,7 @@ textarea{height:150px}
         ((!f.expired && !f.low && !f.soon) ? '<span class="badge b-ok">OK</span>' : '') +
         '<div class="cbtn"><button class="q" data-a="minus" data-id="' + it.id + '">-</button>' +
         '<button class="q" data-a="plus" data-id="' + it.id + '">+</button>' +
+        '<button data-a="used" data-id="' + it.id + '">Used</button>' +
         '<button data-a="edit" data-id="' + it.id + '">Edit</button>' +
         '<button data-a="del" data-id="' + it.id + '">Delete</button></div></div>';
     }
@@ -322,7 +337,7 @@ textarea{height:150px}
     $('shoptext').value = n ? t : '';
   }
 
-  function renderAll() { renderSummary(); renderStock(); }
+  function renderAll() { renderSummary(); renderAlerts(); renderStock(); }
 
   function showTab(t) {
     var names = ['stock', 'add', 'shop', 'backup'], i;
@@ -331,7 +346,7 @@ textarea{height:150px}
       $('tb-' + names[i]).className = (names[i] === t) ? 'on' : '';
     }
     if (t === 'shop') { renderShop(); }
-    if (t === 'backup') { $('s-soon').value = data.settings.soonDays; }
+    if (t === 'backup') { $('s-soon').value = data.settings.soonDays; $('s-notify').value = notifyDays(); updateNotifyStat(); }
     if (t === 'stock') { renderAll(); }
     try { window.scrollTo(0, 0); } catch (e) {}
   }
@@ -371,6 +386,191 @@ textarea{height:150px}
   }
 
   function backupText() { return JSON.stringify(data); }
+
+  /* ---------- Expiry reminders ---------- */
+  function notifyDays() { var n = Math.round(num(data.settings.notifyDays)); return n >= 1 ? n : 7; }
+  function todayStr() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()); }
+
+  function mirror() {
+    try {
+      if (!window.indexedDB) { return; }
+      var r = indexedDB.open('efs', 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
+      r.onsuccess = function () {
+        try {
+          var db = r.result;
+          var tx = db.transaction('kv', 'readwrite');
+          tx.objectStore('kv').put({ items: data.items, notifyDays: notifyDays() }, 'data');
+          tx.oncomplete = function () { db.close(); };
+        } catch (e) {}
+      };
+    } catch (e2) {}
+  }
+
+  function alertItems() {
+    var out = { expired: [], soon: [] }, n = notifyDays(), i, d;
+    for (i = 0; i < data.items.length; i++) {
+      d = daysLeft(data.items[i].exp);
+      if (d === null) { continue; }
+      if (d < 0) { out.expired.push(data.items[i]); }
+      else if (d <= n) { out.soon.push({ it: data.items[i], d: d }); }
+    }
+    out.soon.sort(function (a, b) { return a.d - b.d; });
+    return out;
+  }
+  function namesOf(arr, max) {
+    var s = [], i;
+    for (i = 0; i < arr.length && i < max; i++) { s.push(arr[i]); }
+    return s.join(', ') + (arr.length > max ? ' and ' + (arr.length - max) + ' more' : '');
+  }
+  function renderAlerts() {
+    var a = alertItems(), h = '', i, nm = [];
+    if (a.expired.length) {
+      for (i = 0; i < a.expired.length; i++) { nm.push(a.expired[i].name); }
+      h += '<div class="alert"><b>Expired (' + a.expired.length + ')</b>' + esc(namesOf(nm, 6)) + '</div>';
+    }
+    if (a.soon.length) {
+      nm = [];
+      for (i = 0; i < a.soon.length; i++) { nm.push(a.soon[i].it.name + ' (' + (a.soon[i].d === 0 ? 'today' : a.soon[i].d + 'd') + ')'); }
+      h += '<div class="alert"><b>Expiring within ' + notifyDays() + ' days (' + a.soon.length + ')</b>' + esc(namesOf(nm, 6)) + '</div>';
+    }
+    $('alerts').innerHTML = h;
+  }
+  function notifyBody(a) {
+    var parts = [];
+    if (a.expired.length) { parts.push(a.expired.length + ' expired'); }
+    if (a.soon.length) {
+      var nm = [], i;
+      for (i = 0; i < a.soon.length; i++) { nm.push(a.soon[i].it.name); }
+      parts.push(a.soon.length + ' expiring within ' + notifyDays() + ' days: ' + namesOf(nm, 4));
+    }
+    return parts.join('. ');
+  }
+  function checkNotify() {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) { return; }
+      var a = alertItems();
+      if (!a.expired.length && !a.soon.length) { return; }
+      var today = todayStr();
+      if (localStorage.getItem('efs_last') === today) { return; }
+      localStorage.setItem('efs_last', today);
+      var body = notifyBody(a);
+      navigator.serviceWorker.ready.then(function (reg) {
+        reg.showNotification('Food stock reminder', { body: body, tag: 'efs-expiry' });
+      });
+    } catch (e) {}
+  }
+  function registerPeriodic() {
+    try {
+      if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) { return; }
+      navigator.serviceWorker.ready.then(function (reg) {
+        if (reg.periodicSync) { reg.periodicSync.register('expiry-check', { minInterval: 12 * 3600 * 1000 }).catch(function () {}); }
+      });
+    } catch (e) {}
+  }
+  function updateNotifyStat() {
+    var t;
+    if (!('Notification' in window) || !navigator.serviceWorker) { t = 'Notifications are not supported on this device. Use the calendar reminders below.'; }
+    else if (Notification.permission === 'granted') { t = 'Notifications are ON. You are reminded when you open the app and, on newer Android Chrome, in the background about once a day (not guaranteed).'; }
+    else if (Notification.permission === 'denied') { t = 'Notifications are blocked. Allow them in the browser site settings, then try again.'; }
+    else { t = 'Notifications are off.'; }
+    $('notifystat').innerHTML = esc(t);
+  }
+  function enableNotify() {
+    if (!('Notification' in window) || !navigator.serviceWorker) {
+      alert('Notifications are not supported on this device or browser. Use the calendar reminders instead.'); return;
+    }
+    var done = false;
+    function after(p) {
+      if (done) { return; } done = true;
+      if (p === 'granted') {
+        try { localStorage.removeItem('efs_last'); } catch (e) {}
+        mirror(); registerPeriodic(); checkNotify();
+      }
+      updateNotifyStat();
+    }
+    try {
+      var r = Notification.requestPermission(after);
+      if (r && r.then) { r.then(after); }
+    } catch (e2) { alert('Could not ask for permission on this browser.'); }
+  }
+
+  function icsEsc(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+  function nextDay(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s), d = new Date(+m[1], +m[2] - 1, +m[3] + 1);
+    return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate());
+  }
+  function makeICS() {
+    var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EmergencyFoodStock//EN', 'CALSCALE:GREGORIAN'];
+    var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
+    var mins = Math.max(notifyDays() * 1440 - 540, 0), i, it, n = 0;
+    for (i = 0; i < data.items.length; i++) {
+      it = data.items[i];
+      var d = daysLeft(it.exp);
+      if (d === null || d < 0) { continue; }
+      n++;
+      L.push('BEGIN:VEVENT', 'UID:' + it.id + '@foodstock', 'DTSTAMP:' + stamp,
+        'DTSTART;VALUE=DATE:' + it.exp.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + nextDay(it.exp),
+        'SUMMARY:' + icsEsc('Expires: ' + it.name + ' (' + fmt(it.qty) + ' ' + it.unit + ')'),
+        'DESCRIPTION:' + icsEsc('Emergency food stock. Use it, rotate it, or replace it.'),
+        'BEGIN:VALARM', 'TRIGGER:-PT' + mins + 'M', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.name + ' expires on ' + it.exp), 'END:VALARM',
+        'END:VEVENT');
+    }
+    L.push('END:VCALENDAR');
+    return { text: L.join('\r\n'), count: n };
+  }
+  function downloadICS() {
+    var r = makeICS();
+    if (!r.count) { alert('No items with a future expiry date to add.'); return; }
+    try {
+      var b = new Blob([r.text], { type: 'text/calendar' });
+      var link = document.createElement('a');
+      link.href = (window.URL || window.webkitURL).createObjectURL(b);
+      link.download = 'food-expiry-reminders.ics';
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+      toast(r.count + ' reminders in file');
+    } catch (e) {
+      $('bk').value = r.text;
+      alert('Download is not supported here. The calendar text was put in the backup box below; copy it into a file named reminders.ics.');
+    }
+  }
+
+  /* ---------- Usage history ---------- */
+  function logUse(it, amt) {
+    if (amt <= 0) { return; }
+    if (!data.log) { data.log = []; }
+    data.log.push({ d: todayStr(), id: it.id, n: it.name, q: amt, u: it.unit });
+    if (data.log.length > 1000) { data.log = data.log.slice(data.log.length - 1000); }
+  }
+  function adjustQty(k, delta) {
+    var it = data.items[k], old = num(it.qty);
+    var nq = Math.max(Math.round((old + delta) * 100) / 100, 0);
+    if (nq < old) { logUse(it, Math.round((old - nq) * 100) / 100); }
+    it.qty = nq;
+  }
+  function renderUsage() {
+    var log = data.log || [], i, c = new Date(), tot = {}, names = [], id, k, rows = [], h = '';
+    c.setDate(c.getDate() - 30);
+    var cut = c.getFullYear() + '-' + pad(c.getMonth() + 1) + '-' + pad(c.getDate());
+    for (i = 0; i < log.length; i++) {
+      if (log[i].d < cut) { continue; }
+      if (!tot[log[i].id]) { tot[log[i].id] = { n: log[i].n, u: log[i].u, q: 0 }; names.push(log[i].id); }
+      tot[log[i].id].q += log[i].q;
+    }
+    for (i = 0; i < names.length; i++) {
+      id = names[i]; k = find(id);
+      rows.push({ n: tot[id].n, u: tot[id].u, q: Math.round(tot[id].q * 100) / 100, have: k >= 0 ? num(data.items[k].qty) : null });
+    }
+    rows.sort(function (a, b) { return b.q - a.q; });
+    if (!rows.length) { $('usagebox').innerHTML = '<div class="hint">No usage recorded in the last 30 days. Use the "Used" or "-" buttons when you consume food.</div>'; return; }
+    for (i = 0; i < rows.length; i++) {
+      var per = rows[i].q / 30, left = '';
+      if (rows[i].have !== null && per > 0) { left = '<br>' + fmt(rows[i].have) + ' left lasts about ' + Math.round(rows[i].have / per) + ' days at this rate'; }
+      h += '<div class="card"><div class="nm">' + esc(rows[i].n) + '</div><div class="meta">Used ' + fmt(rows[i].q) + ' ' + esc(rows[i].u) +
+        ' (about ' + fmt(per * 7) + ' per week)' + left + '</div></div>';
+    }
+    $('usagebox').innerHTML = h;
+  }
 
   /* ---------- Barcode scanning ---------- */
   var scanMode = 'main', scanStream = null, scanTimer = null, zxReader = null, scanBusy = false, lastCode = '', pendingName = '';
@@ -519,15 +719,25 @@ textarea{height:150px}
 
   function handle(a, id, el) {
     var k, it, n;
-    if (a === 'scanmain') { openScanner('main'); }
+    if (a === 'used') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      var amt = prompt('How many ' + it.unit + ' of ' + it.name + ' did you use? (you have ' + fmt(it.qty) + ')', '1');
+      if (amt === null) { return; }
+      amt = num(amt); if (amt <= 0) { return; }
+      adjustQty(k, -Math.min(amt, num(it.qty)));
+      save(); renderAll(); toast('Recorded');
+    }
+    else if (a === 'usage') { renderUsage(); }
+    else if (a === 'notify') { enableNotify(); }
+    else if (a === 'ics') { downloadICS(); }
+    else if (a === 'scanmain') { openScanner('main'); }
     else if (a === 'scanform') { openScanner('form'); }
     else if (a === 'scanclose') { closeScanner(); }
     else if (a === 'scanuse') { scanBusy = false; onCode($('scancode').value); }
     else if (a === 'sc-next') { scanBusy = false; $('scanres').innerHTML = ''; $('scancode').value = ''; setStat('Point the camera at the next barcode'); }
     else if (a === 'sc-plus' || a === 'sc-minus') {
       k = find(id); if (k < 0) { return; }
-      n = num(data.items[k].qty) + (a === 'sc-plus' ? 1 : -1);
-      data.items[k].qty = Math.max(Math.round(n * 100) / 100, 0);
+      adjustQty(k, a === 'sc-plus' ? 1 : -1);
       save(); renderAll(); showResult(lastCode); toast('Updated');
     }
     else if (a === 'sc-edit') { closeScanner(); handle('edit', id, el); }
@@ -541,8 +751,7 @@ textarea{height:150px}
     else if (a === 'cancel') { resetForm(); showTab('stock'); }
     else if (a === 'plus' || a === 'minus') {
       k = find(id); if (k < 0) { return; }
-      n = num(data.items[k].qty) + (a === 'plus' ? 1 : -1);
-      data.items[k].qty = Math.max(Math.round(n * 100) / 100, 0);
+      adjustQty(k, a === 'plus' ? 1 : -1);
       save(); renderAll();
     }
     else if (a === 'edit') {
@@ -576,7 +785,11 @@ textarea{height:150px}
     else if (a === 'selbk') { selectBox($('bk')); }
     else if (a === 'savesettings') {
       n = Math.round(num($('s-soon').value)); if (n < 1) { n = 60; }
-      data.settings.soonDays = n; save(); renderAll(); toast('Setting saved');
+      data.settings.soonDays = n;
+      n = Math.round(num($('s-notify').value)); if (n < 1) { n = 7; }
+      data.settings.notifyDays = n;
+      try { localStorage.removeItem('efs_last'); } catch (e9) {}
+      save(); renderAll(); toast('Settings saved');
     }
     else if (a === 'export') { $('bk').value = backupText(); toast('Backup text created - copy it'); }
     else if (a === 'download') {
@@ -631,6 +844,10 @@ textarea{height:150px}
   };
 
   fillSelects(); load(); resetForm(); renderAll();
+  mirror(); checkNotify(); registerPeriodic();
+  try {
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) { renderAll(); checkNotify(); } }, false);
+  } catch (e4) {}
   try {
     if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
       navigator.serviceWorker.register('sw.js').catch(function () {});
