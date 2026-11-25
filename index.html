@@ -87,6 +87,28 @@ textarea{height:150px}
       <option value="ok">OK</option>
     </select></div>
     <div class="clear"></div>
+    <div style="height:6px"></div>
+    <div class="half"><label style="margin:2px 0">Sort by</label><select id="s1">
+      <option value="attn">Needs attention first</option>
+      <option value="name">Item name</option>
+      <option value="loc">Location</option>
+      <option value="color">Color</option>
+      <option value="exp">Expiry date</option>
+    </select></div>
+    <div class="half r"><label style="margin:2px 0">Then by</label><select id="s2">
+      <option value="">(none)</option>
+      <option value="name">Item name</option>
+      <option value="loc">Location</option>
+      <option value="color">Color</option>
+      <option value="exp">Expiry date</option>
+    </select></div>
+    <div class="clear"></div>
+    <label style="margin:6px 0 2px">Order</label>
+    <select id="sdir">
+      <option value="asc">A to Z / earliest date first</option>
+      <option value="desc">Z to A / latest date first</option>
+    </select>
+    <div class="hint">Color and expiry use the batch that expires first. Items with no location, color or date go last.</div>
     <div id="list"></div>
   </div>
 
@@ -109,8 +131,6 @@ textarea{height:150px}
       <div class="half"><label>Quantity</label><input type="number" id="f-qty" step="any" min="0" value="1"></div>
       <div class="half r"><label>Expiry date</label><input type="date" id="f-exp" placeholder="YYYY-MM-DD"></div>
       <div class="clear"></div>
-      <label>Cabinet / bag number for this batch (optional)</label>
-      <input type="text" id="f-bloc" placeholder="e.g. Cabinet 2, Bag 3">
       <label>Batch color tag (optional)</label>
       <input type="hidden" id="f-bcolor" value="">
       <div id="f-bcolor-sw"></div>
@@ -154,6 +174,9 @@ textarea{height:150px}
     <textarea id="bk"></textarea>
     <button class="btn gray" data-a="selbk">Select / copy</button>
     <button class="btn" data-a="import">Restore from text</button>
+    <label>Or load a backup file (.json)</label>
+    <input type="file" id="bkfile">
+    <div class="hint">Pick the food-stock-backup.json file. You will be asked to confirm before your current data is replaced.</div>
     <hr>
     <button class="btn red" data-a="wipe">Delete all data</button>
   </div>
@@ -174,8 +197,6 @@ textarea{height:150px}
   <div class="half r"><label>Expiry date</label><input type="date" id="d-exp" placeholder="YYYY-MM-DD"></div>
   <div class="clear"></div>
   <div class="hint">If no date picker appears, type YYYY-MM-DD. Leave blank if none.</div>
-  <label>Cabinet / bag number (optional)</label>
-  <input type="text" id="d-loc" placeholder="e.g. Cabinet 2, Bag 3">
   <label>Batch color tag (optional)</label>
   <input type="hidden" id="d-color" value="">
   <div id="d-color-sw"></div>
@@ -386,7 +407,8 @@ textarea{height:150px}
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i];
       if (isExp(b) || b.q <= 0) { continue; }
-      return (b.loc || '') + (b.color ? (b.loc ? ' ' : '') + '(' + colorName(b.color) + ' tag)' : '');
+      var where = it.loc || b.loc || '';
+      return where + (b.color ? (where ? ' ' : '') + '(' + colorName(b.color) + ' tag)' : '');
     }
     return '';
   }
@@ -404,7 +426,7 @@ textarea{height:150px}
     dlgCb = cb; dlgZero = allowZero;
     $('d-title').innerHTML = esc(title); $('d-unit').innerHTML = esc(it.unit);
     $('d-q').value = (d.q === undefined ? 1 : d.q); $('d-exp').value = d.exp || '';
-    $('d-loc').value = d.loc || ''; $('d-color').value = d.color || '';
+    $('d-color').value = d.color || '';
     renderSwatches('d-color'); $('bmodal').style.display = 'block';
     try { $('bmodal').scrollTop = 0; } catch (e) {}
   }
@@ -413,7 +435,7 @@ textarea{height:150px}
     var q = num($('d-q').value), nd = normDate($('d-exp').value);
     if (nd === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
     if (q <= 0 && !dlgZero) { alert('Please enter a quantity above 0.'); return; }
-    var v = { q: r2(q), exp: nd, loc: $('d-loc').value.replace(/^\s+|\s+$/g, ''), color: $('d-color').value }, cb = dlgCb;
+    var v = { q: r2(q), exp: nd, loc: '', color: $('d-color').value }, cb = dlgCb;
     closeDlg(); if (cb) { cb(v); }
   }
 
@@ -455,6 +477,44 @@ textarea{height:150px}
     return h;
   }
 
+  function firstBatch(it) {
+    var i, best = null;
+    for (i = 0; i < it.batches.length; i++) {
+      if (!best) { best = it.batches[i]; }
+      else if (it.batches[i].exp && (!best.exp || it.batches[i].exp < best.exp)) { best = it.batches[i]; }
+    }
+    return best;
+  }
+  function sortVal(r, key) {
+    var b;
+    if (key === 'attn') { return prio(r.f); }
+    if (key === 'name') { return r.it.name.toLowerCase(); }
+    if (key === 'loc') { return (r.it.loc || '').toLowerCase(); }
+    b = firstBatch(r.it);
+    if (key === 'color') { return b && b.color ? colorName(b.color).toLowerCase() : ''; }
+    if (key === 'exp') { return b && b.exp ? b.exp : ''; }
+    return '';
+  }
+  function cmpKey(a, b, key, desc) {
+    var x = sortVal(a, key), y = sortVal(b, key), c;
+    if (x === y) { return 0; }
+    if (key === 'attn') { return desc ? y - x : x - y; }
+    if (x === '') { return 1; }
+    if (y === '') { return -1; }
+    c = x < y ? -1 : 1;
+    return desc ? -c : c;
+  }
+  function saveSort() {
+    try { localStorage.setItem('efs_sort', JSON.stringify([$('s1').value, $('s2').value, $('sdir').value])); } catch (e) {}
+  }
+  function loadSort() {
+    try {
+      var v = JSON.parse(localStorage.getItem('efs_sort'));
+      if (v && v.length === 3) { $('s1').value = v[0]; $('s2').value = v[1]; $('sdir').value = v[2]; }
+    } catch (e) {}
+  }
+  function onSort() { saveSort(); renderStock(); }
+
   function renderStock() {
     var q = $('q').value.toLowerCase(), cat = $('fcat').value, st = $('fst').value;
     var rows = [], i, it, f, hay;
@@ -470,11 +530,12 @@ textarea{height:150px}
       if (st === 'ok' && (f.expired || f.low || f.soon)) { continue; }
       rows.push({ it: it, f: f });
     }
+    var k1 = $('s1').value, k2 = $('s2').value, desc = ($('sdir').value === 'desc');
     rows.sort(function (a, b) {
-      var d = prio(a.f) - prio(b.f);
-      if (d !== 0) { return d; }
-      var x = a.it.name.toLowerCase(), y = b.it.name.toLowerCase();
-      return x < y ? -1 : (x > y ? 1 : 0);
+      var d = cmpKey(a, b, k1, desc);
+      if (d === 0 && k2) { d = cmpKey(a, b, k2, desc); }
+      if (d === 0) { d = cmpKey(a, b, 'name', false); }
+      return d;
     });
     if (!rows.length) {
       $('list').innerHTML = '<div class="empty">' + (data.items.length ? 'No items match.' : 'No items yet. Tap "Add" to start your emergency stock.') + '</div>';
@@ -550,7 +611,7 @@ textarea{height:150px}
     $('f-code').value = '';
     $('f-name').value = ''; $('f-cat').value = CATS[0]; $('f-qty').value = '1';
     $('f-unit').value = 'pcs'; $('f-min').value = '0'; $('f-exp').value = ''; $('f-loc').value = '';
-    $('f-bloc').value = ''; $('f-bcolor').value = ''; renderSwatches('f-bcolor');
+    $('f-bcolor').value = ''; renderSwatches('f-bcolor');
   }
 
   function saveItem() {
@@ -573,7 +634,7 @@ textarea{height:150px}
     var exp = normDate($('f-exp').value);
     if (exp === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
     var qty = Math.max(num($('f-qty').value), 0);
-    var bloc = $('f-bloc').value.replace(/^\s+|\s+$/g, ''), bcolor = $('f-bcolor').value;
+    var bloc = '', bcolor = $('f-bcolor').value;
     target = -1;
     dc = code ? findCode(code, null) : -1;
     if (dc >= 0) {
@@ -965,7 +1026,7 @@ textarea{height:150px}
       openDlg('Edit batch: ' + it.name, it, { q: b.q, exp: b.exp, loc: b.loc, color: b.color }, true, function (v) {
         var j = findBatch(it, bid); if (j < 0) { return; }
         if (v.q <= 0) { it.batches.splice(j, 1); }
-        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].loc = v.loc; it.batches[j].color = v.color; }
+        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].color = v.color; }
         sortBatches(it); save(); renderAll(); toast('Updated');
       });
     }
@@ -1086,6 +1147,9 @@ textarea{height:150px}
   $('q').onkeyup = renderStock;
   $('fcat').onchange = renderStock;
   $('fst').onchange = renderStock;
+  $('s1').onchange = onSort;
+  $('s2').onchange = onSort;
+  $('sdir').onchange = onSort;
   $('f-preset').onchange = function () {
     var v = this.value; if (v === '') { return; }
     var p = PRESETS[+v];
@@ -1093,7 +1157,17 @@ textarea{height:150px}
     $('f-cat').value = p[1]; $('f-unit').value = p[2]; $('f-min').value = p[3];
   };
 
-  fillSelects(); load(); resetForm(); renderAll();
+  $('bkfile').onchange = function () {
+    var f = this.files && this.files[0], inp = this;
+    if (!f) { return; }
+    if (!window.FileReader) { alert('This browser cannot read files. Open the file, copy its text, and paste it in the box.'); return; }
+    var r = new FileReader();
+    r.onload = function () { $('bk').value = r.result; inp.value = ''; handle('import', null, null); };
+    r.onerror = function () { alert('Could not read that file.'); };
+    r.readAsText(f);
+  };
+
+  fillSelects(); load(); loadSort(); resetForm(); renderAll();
   mirror(); checkNotify(); registerPeriodic();
   try {
     document.addEventListener('visibilitychange', function () { if (!document.hidden) { renderAll(); checkNotify(); } }, false);
