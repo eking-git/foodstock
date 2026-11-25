@@ -38,10 +38,13 @@ textarea{height:150px}
 .qty small{font-size:13px;color:#666}
 .badge{display:inline-block;font-size:12px;color:#fff;padding:2px 7px;margin:2px 4px 2px 0;border-radius:9px}
 .b-expired{background:#c62828}.b-low{background:#ad7a00}.b-soon{background:#ef6c00}.b-ok{background:#2e7d32}
+.brow{border-top:1px solid #e6e6e6;padding:6px 0;font-size:14px}
+.brow.exp{color:#c62828;font-weight:bold}.brow.soon{color:#ef6c00}
+.brow button{border:0;background:#e0e6e0;padding:6px 10px;margin-left:4px;font-size:13px;border-radius:4px;color:#123}
 .cbtn button{border:0;background:#e0e6e0;font-size:16px;padding:10px 14px;margin:6px 6px 0 0;border-radius:4px;color:#123}
-.cbtn button.q{background:#2e7d32;color:#fff;font-weight:bold;font-size:20px;padding:6px 18px}
+.cbtn button.q{background:#2e7d32;color:#fff;font-weight:bold;font-size:18px;padding:8px 16px}
 .empty{text-align:center;color:#777;padding:24px 8px}
-.msg{position:fixed;left:10%;right:10%;bottom:20px;background:#222;color:#fff;text-align:center;padding:10px;border-radius:6px;display:none;z-index:9}
+.msg{position:fixed;left:10%;right:10%;bottom:20px;background:#222;color:#fff;text-align:center;padding:10px;border-radius:6px;display:none;z-index:30}
 .hint{font-size:12px;color:#666;margin-top:3px}
 #scan{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:#111;z-index:20;color:#fff;overflow:auto;padding:10px}
 #scanvideo{width:100%;max-height:45%;background:#000}
@@ -49,6 +52,11 @@ textarea{height:150px}
 .sres .btn{margin-bottom:6px}
 .alert{background:#ffebee;border:1px solid #c62828;color:#7f0000;padding:10px;margin:0 0 8px;font-size:14px}
 .alert b{display:block;margin-bottom:3px}
+.dot{display:inline-block;width:14px;height:14px;border-radius:50%;border:1px solid #555;margin-right:6px;vertical-align:middle}
+.sw{display:inline-block;width:34px;height:34px;border-radius:6px;border:2px solid #889;margin:3px 4px 3px 0;padding:0;font-size:16px;color:#444;vertical-align:middle}
+.sw.sel{border:4px solid #000}
+#bmodal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:40;overflow:auto;padding:12px}
+#bmodal .box2{background:#fff;max-width:480px;margin:20px auto;padding:14px;border-radius:6px}
 </style>
 </head>
 <body>
@@ -94,13 +102,21 @@ textarea{height:150px}
     <input type="text" id="f-name" placeholder="e.g. Canned sardines">
     <label>Category</label>
     <select id="f-cat"></select>
-    <div class="half"><label>Quantity</label><input type="number" id="f-qty" step="any" min="0" value="1"></div>
-    <div class="half r"><label>Unit</label><input type="text" id="f-unit" placeholder="cans, kg, packs" value="pcs"></div>
+    <div class="half"><label>Unit</label><input type="text" id="f-unit" placeholder="cans, kg, packs" value="pcs"></div>
+    <div class="half r"><label>Alert when total is at or below</label><input type="number" id="f-min" step="any" min="0" value="0"></div>
     <div class="clear"></div>
-    <div class="half"><label>Alert when at or below</label><input type="number" id="f-min" step="any" min="0" value="0"></div>
-    <div class="half r"><label>Expiry date</label><input type="date" id="f-exp" placeholder="YYYY-MM-DD"></div>
-    <div class="clear"></div>
-    <div class="hint">If no date picker appears, type the date as YYYY-MM-DD (example 2027-03-31). Leave blank if none.</div>
+    <div id="batchfields">
+      <div class="half"><label>Quantity</label><input type="number" id="f-qty" step="any" min="0" value="1"></div>
+      <div class="half r"><label>Expiry date</label><input type="date" id="f-exp" placeholder="YYYY-MM-DD"></div>
+      <div class="clear"></div>
+      <label>Cabinet / bag number for this batch (optional)</label>
+      <input type="text" id="f-bloc" placeholder="e.g. Cabinet 2, Bag 3">
+      <label>Batch color tag (optional)</label>
+      <input type="hidden" id="f-bcolor" value="">
+      <div id="f-bcolor-sw"></div>
+      <div class="hint">If no date picker appears, type the date as YYYY-MM-DD (example 2027-03-31). Leave blank if none. Same item with another expiry date? Add it again: the app adds it as a new batch.</div>
+    </div>
+    <div id="editnote" class="hint" style="display:none">To change quantities or expiry dates, use "Add stock" and the batch "Edit" buttons on the item card.</div>
     <label>Storage location / notes (optional)</label>
     <input type="text" id="f-loc" placeholder="e.g. Kitchen cabinet, bag #2">
     <button class="btn" data-a="save">Save item</button>
@@ -126,7 +142,7 @@ textarea{height:150px}
     <button class="btn blue" data-a="notify">Enable notifications</button>
     <div class="hint" id="notifystat"></div>
     <button class="btn blue" data-a="ics">Download calendar reminders (.ics)</button>
-    <div class="hint">Most reliable: adds each expiry date to your phone calendar with an alert. Open the downloaded file and choose Calendar. Download again after you add or change items.</div>
+    <div class="hint">Most reliable: adds each batch's expiry date to your phone calendar with an alert. Open the downloaded file and choose Calendar. Download again after you add or change items.</div>
     <h3 style="margin:18px 0 6px">Usage history</h3>
     <button class="btn blue" data-a="usage">Show usage (last 30 days)</button>
     <div id="usagebox"></div>
@@ -142,6 +158,7 @@ textarea{height:150px}
     <button class="btn red" data-a="wipe">Delete all data</button>
   </div>
 </div>
+
 <div id="scan">
   <h3 style="margin:0 0 8px">Scan barcode</h3>
   <video id="scanvideo" autoplay playsinline muted></video>
@@ -151,13 +168,27 @@ textarea{height:150px}
   <button class="btn red" data-a="scanclose">Close</button>
   <div id="scanres"></div>
 </div>
+<div id="bmodal"><div class="box2">
+  <h3 id="d-title" style="margin:0 0 6px">Add stock</h3>
+  <div class="half"><label>Quantity (<span id="d-unit"></span>)</label><input type="number" id="d-q" step="any" min="0" value="1"></div>
+  <div class="half r"><label>Expiry date</label><input type="date" id="d-exp" placeholder="YYYY-MM-DD"></div>
+  <div class="clear"></div>
+  <div class="hint">If no date picker appears, type YYYY-MM-DD. Leave blank if none.</div>
+  <label>Cabinet / bag number (optional)</label>
+  <input type="text" id="d-loc" placeholder="e.g. Cabinet 2, Bag 3">
+  <label>Batch color tag (optional)</label>
+  <input type="hidden" id="d-color" value="">
+  <div id="d-color-sw"></div>
+  <button class="btn" data-a="dlg-save">Save</button>
+  <button class="btn gray" data-a="dlg-cancel">Cancel</button>
+</div></div>
 <div class="msg" id="msg"></div>
 
 <script>
 (function () {
   var KEY = 'efs_v1';
-  var data = { items: [], settings: { soonDays: 60 } };
-  var editingId = null;
+  var data = { items: [], settings: { soonDays: 60, notifyDays: 7 }, log: [] };
+  var editingId = null, idc = 0;
   var CATS = ['Rice & Grains', 'Canned Goods', 'Instant Meals', 'Water & Drinks', 'Milk & Baby', 'Cooking Essentials', 'Snacks & Energy', 'Other'];
   var PRESETS = [
     ['Rice', 'Rice & Grains', 'kg', 10],
@@ -183,21 +214,52 @@ textarea{height:150px}
     return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
   function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
-  function fmt(n) { return String(Math.round(num(n) * 100) / 100); }
+  function r2(n) { return Math.round(n * 100) / 100; }
+  function fmt(n) { return String(r2(num(n))); }
   function pad(n) { return (n < 10 ? '0' : '') + n; }
-  function newId() { return 'i' + new Date().getTime() + Math.floor(Math.random() * 1000); }
+  function newId() { idc++; return 'i' + new Date().getTime() + idc + Math.floor(Math.random() * 1000); }
+  function todayStr() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()); }
 
+  /* ---------- data ---------- */
+  function sortBatches(it) {
+    it.batches.sort(function (a, b) {
+      if (a.exp === b.exp) { return 0; }
+      if (!a.exp) { return 1; }
+      if (!b.exp) { return -1; }
+      return a.exp < b.exp ? -1 : 1;
+    });
+  }
+  function migrate(d) {
+    var i, j, it, b;
+    if (!d.settings) { d.settings = { soonDays: 60, notifyDays: 7 }; }
+    for (i = 0; i < d.items.length; i++) {
+      it = d.items[i];
+      if (!it.id) { it.id = newId(); }
+      if (!it.batches || it.batches.length === undefined) {
+        it.batches = [];
+        if (num(it.qty) > 0) { it.batches.push({ id: newId(), q: num(it.qty), exp: it.exp || '' }); }
+      }
+      delete it.qty; delete it.exp;
+      for (j = it.batches.length - 1; j >= 0; j--) {
+        b = it.batches[j];
+        if (!b.id) { b.id = newId(); }
+        b.q = num(b.q); b.exp = b.exp || ''; b.loc = b.loc || ''; b.color = b.color || '';
+        if (b.q <= 0) { it.batches.splice(j, 1); }
+      }
+      it.min = num(it.min); it.unit = it.unit || 'pcs'; it.cat = it.cat || 'Other'; it.name = it.name || 'Item';
+      sortBatches(it);
+    }
+    if (!d.log) { d.log = []; }
+  }
   function load() {
     try {
       var s = window.localStorage.getItem(KEY);
       if (s) {
         var d = JSON.parse(s);
-        if (d && d.items && d.items.length !== undefined) {
-          data = d;
-          if (!data.settings) { data.settings = { soonDays: 60 }; }
-        }
+        if (d && d.items && d.items.length !== undefined) { data = d; }
       }
     } catch (e) { $('warn').style.display = 'block'; }
+    migrate(data);
   }
   function save() {
     try { window.localStorage.setItem(KEY, JSON.stringify(data)); }
@@ -229,16 +291,133 @@ textarea{height:150px}
     var t = new Date(n.getFullYear(), n.getMonth(), n.getDate());
     return Math.round((d.getTime() - t.getTime()) / 86400000);
   }
+  function relText(d) {
+    if (d === null) { return ''; }
+    if (d < 0) { return (-d) + ' days ago'; }
+    if (d === 0) { return 'today'; }
+    return 'in ' + d + ' days';
+  }
+  function isExp(b) { var d = daysLeft(b.exp); return d !== null && d < 0; }
+  function total(it) { var s = 0, i; for (i = 0; i < it.batches.length; i++) { s += it.batches[i].q; } return r2(s); }
+  function usable(it) { var s = 0, i; for (i = 0; i < it.batches.length; i++) { if (!isExp(it.batches[i])) { s += it.batches[i].q; } } return r2(s); }
+  function expiredQty(it) { return r2(total(it) - usable(it)); }
   function flags(it) {
-    var f = { expired: false, low: false, soon: false };
-    var d = daysLeft(it.exp);
-    if (d !== null && d < 0) { f.expired = true; }
-    else if (d !== null && d <= num(data.settings.soonDays)) { f.soon = true; }
-    if (num(it.qty) <= num(it.min)) { f.low = true; }
+    var f = { expired: false, low: false, soon: false }, i, d, soonDays = num(data.settings.soonDays);
+    for (i = 0; i < it.batches.length; i++) {
+      d = daysLeft(it.batches[i].exp);
+      if (d === null) { continue; }
+      if (d < 0) { f.expired = true; }
+      else if (d <= soonDays) { f.soon = true; }
+    }
+    f.low = usable(it) <= num(it.min);
     return f;
   }
   function prio(f) { return f.expired ? 0 : (f.low ? 1 : (f.soon ? 2 : 3)); }
+  function find(id) {
+    for (var i = 0; i < data.items.length; i++) { if (data.items[i].id === id) { return i; } }
+    return -1;
+  }
+  function findBatch(it, bid) {
+    for (var i = 0; i < it.batches.length; i++) { if (it.batches[i].id === bid) { return i; } }
+    return -1;
+  }
+  function findCode(code, exceptId) {
+    for (var i = 0; i < data.items.length; i++) {
+      if (data.items[i].code && data.items[i].code === code && data.items[i].id !== exceptId) { return i; }
+    }
+    return -1;
+  }
+  function findName(name, exceptId) {
+    var n = name.toLowerCase();
+    for (var i = 0; i < data.items.length; i++) {
+      if (data.items[i].name.toLowerCase() === n && data.items[i].id !== exceptId) { return i; }
+    }
+    return -1;
+  }
+  function addBatch(it, q, exp, loc, color) {
+    var i, b;
+    loc = loc || ''; color = color || '';
+    for (i = 0; i < it.batches.length; i++) {
+      b = it.batches[i];
+      if (b.exp === exp && (b.loc || '') === loc && (b.color || '') === color) { b.q = r2(b.q + q); sortBatches(it); return; }
+    }
+    it.batches.push({ id: newId(), q: r2(q), exp: exp, loc: loc, color: color });
+    sortBatches(it);
+  }
+  function cleanBatches(it) {
+    for (var i = it.batches.length - 1; i >= 0; i--) { if (it.batches[i].q <= 0) { it.batches.splice(i, 1); } }
+  }
+  function logUse(it, amt) {
+    if (amt <= 0) { return; }
+    if (!data.log) { data.log = []; }
+    data.log.push({ d: todayStr(), id: it.id, n: it.name, q: amt, u: it.unit });
+    if (data.log.length > 1000) { data.log = data.log.slice(data.log.length - 1000); }
+  }
+  /* uses the earliest-expiring batch first; expired batches only after usable ones run out */
+  function useFifo(k, amt) {
+    var it = data.items[k], left = amt, used = 0, pass, i, b, t, e;
+    sortBatches(it);
+    for (pass = 0; pass < 2 && left > 0; pass++) {
+      for (i = 0; i < it.batches.length && left > 0; i++) {
+        b = it.batches[i]; e = isExp(b);
+        if ((pass === 0 && e) || (pass === 1 && !e)) { continue; }
+        t = Math.min(b.q, left);
+        b.q = r2(b.q - t); left = r2(left - t);
+        if (pass === 0) { used = r2(used + t); }
+      }
+    }
+    cleanBatches(it);
+    if (used > 0) { logUse(it, used); }
+    return used;
+  }
+  var COLORS = [['', 'None', '#ffffff'], ['red', 'Red', '#e53935'], ['blue', 'Blue', '#1e88e5'], ['green', 'Green', '#43a047'],
+    ['yellow', 'Yellow', '#fdd835'], ['orange', 'Orange', '#fb8c00'], ['purple', 'Purple', '#8e24aa'], ['pink', 'Pink', '#ec407a'],
+    ['brown', 'Brown', '#6d4c41'], ['black', 'Black', '#212121'], ['gray', 'Gray', '#9e9e9e']];
+  function colorName(k) { for (var i = 0; i < COLORS.length; i++) { if (COLORS[i][0] === k) { return COLORS[i][1]; } } return 'None'; }
+  function colorHex(k) { for (var i = 0; i < COLORS.length; i++) { if (COLORS[i][0] === k) { return COLORS[i][2]; } } return '#ffffff'; }
+  function dotHtml(k) { return k ? '<span class="dot" style="background:' + colorHex(k) + '"></span>' : ''; }
+  function batchText(it) {
+    var s = '', i;
+    for (i = 0; i < it.batches.length; i++) { s += ' ' + (it.batches[i].loc || '') + ' ' + (it.batches[i].color ? colorName(it.batches[i].color) : ''); }
+    return s;
+  }
+  function nextHint(it) {
+    var i, b;
+    for (i = 0; i < it.batches.length; i++) {
+      b = it.batches[i];
+      if (isExp(b) || b.q <= 0) { continue; }
+      return (b.loc || '') + (b.color ? (b.loc ? ' ' : '') + '(' + colorName(b.color) + ' tag)' : '');
+    }
+    return '';
+  }
+  function renderSwatches(tid) {
+    var cur = $(tid).value, h = '', i, c;
+    for (i = 0; i < COLORS.length; i++) {
+      c = COLORS[i];
+      h += '<button type="button" class="sw' + (cur === c[0] ? ' sel' : '') + '" data-a="pickc" data-t="' + tid + '" data-c="' + c[0] + '" title="' + c[1] + '" style="background:' + c[2] + '">' + (c[0] === '' ? 'x' : '') + '</button>';
+    }
+    h += '<div class="hint">Color tag: ' + esc(colorName(cur)) + '</div>';
+    $(tid + '-sw').innerHTML = h;
+  }
+  var dlgCb = null, dlgZero = false;
+  function openDlg(title, it, d, allowZero, cb) {
+    dlgCb = cb; dlgZero = allowZero;
+    $('d-title').innerHTML = esc(title); $('d-unit').innerHTML = esc(it.unit);
+    $('d-q').value = (d.q === undefined ? 1 : d.q); $('d-exp').value = d.exp || '';
+    $('d-loc').value = d.loc || ''; $('d-color').value = d.color || '';
+    renderSwatches('d-color'); $('bmodal').style.display = 'block';
+    try { $('bmodal').scrollTop = 0; } catch (e) {}
+  }
+  function closeDlg() { $('bmodal').style.display = 'none'; dlgCb = null; }
+  function dlgSave() {
+    var q = num($('d-q').value), nd = normDate($('d-exp').value);
+    if (nd === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
+    if (q <= 0 && !dlgZero) { alert('Please enter a quantity above 0.'); return; }
+    var v = { q: r2(q), exp: nd, loc: $('d-loc').value.replace(/^\s+|\s+$/g, ''), color: $('d-color').value }, cb = dlgCb;
+    closeDlg(); if (cb) { cb(v); }
+  }
 
+  /* ---------- rendering ---------- */
   function fillSelects() {
     var i, h = '<option value="">All categories</option>', h2 = '', h3 = '<option value="">-- Quick pick common item --</option>';
     for (i = 0; i < CATS.length; i++) {
@@ -262,12 +441,26 @@ textarea{height:150px}
       '<div class="box bad"><div><b>' + exp + '</b><span>Expired</span></div></div>';
   }
 
+  function batchRows(it) {
+    var h = '', i, b, d, cls, txt;
+    if (!it.batches.length) { return '<div class="brow">No stock</div>'; }
+    for (i = 0; i < it.batches.length; i++) {
+      b = it.batches[i]; d = daysLeft(b.exp);
+      cls = (d !== null && d < 0) ? 'exp' : ((d !== null && d <= num(data.settings.soonDays)) ? 'soon' : '');
+      txt = b.exp ? ('expires ' + esc(b.exp) + ' (' + relText(d) + ')') : 'no expiry date';
+      h += '<div class="brow ' + cls + '">' + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ <b>' + esc(b.loc) + '</b>' : '') + ' - ' + txt +
+        ' <button data-a="bedit" data-id="' + it.id + '" data-b="' + b.id + '">Edit</button>' +
+        '<button data-a="bdel" data-id="' + it.id + '" data-b="' + b.id + '">x</button></div>';
+    }
+    return h;
+  }
+
   function renderStock() {
     var q = $('q').value.toLowerCase(), cat = $('fcat').value, st = $('fst').value;
     var rows = [], i, it, f, hay;
     for (i = 0; i < data.items.length; i++) {
       it = data.items[i]; f = flags(it);
-      hay = (it.name + ' ' + it.cat + ' ' + (it.loc || '') + ' ' + (it.code || '')).toLowerCase();
+      hay = (it.name + ' ' + it.cat + ' ' + (it.loc || '') + ' ' + (it.code || '') + ' ' + batchText(it)).toLowerCase();
       if (q && hay.indexOf(q) < 0) { continue; }
       if (cat && it.cat !== cat) { continue; }
       if (st === 'attn' && !(f.expired || f.low || f.soon)) { continue; }
@@ -287,24 +480,21 @@ textarea{height:150px}
       $('list').innerHTML = '<div class="empty">' + (data.items.length ? 'No items match.' : 'No items yet. Tap "Add" to start your emergency stock.') + '</div>';
       return;
     }
-    var h = '', r, cls, d, ex;
+    var h = '', r, cls, eq;
     for (i = 0; i < rows.length; i++) {
       r = rows[i]; it = r.it; f = r.f;
       cls = f.expired ? 'expired' : (f.low ? 'low' : (f.soon ? 'soon' : ''));
-      d = daysLeft(it.exp);
-      ex = '';
-      if (it.exp) {
-        ex = '<div class="meta">Expires ' + esc(it.exp) + (d !== null ? (d < 0 ? ' (' + (-d) + ' days ago)' : ' (in ' + d + ' days)') : '') + '</div>';
-      }
+      eq = expiredQty(it);
       h += '<div class="card ' + cls + '"><div class="nm">' + esc(it.name) + '</div>' +
         '<div class="meta">' + esc(it.cat) + (it.loc ? ' | ' + esc(it.loc) : '') + (it.code ? ' | #' + esc(it.code) : '') + '</div>' +
-        '<div class="qty">' + fmt(it.qty) + ' ' + esc(it.unit) + ' <small>(alert at ' + fmt(it.min) + ')</small></div>' + ex +
-        (f.expired ? '<span class="badge b-expired">EXPIRED</span>' : '') +
-        (f.low ? '<span class="badge b-low">' + (num(it.qty) <= 0 ? 'OUT' : 'LOW') + '</span>' : '') +
+        '<div class="qty">' + fmt(usable(it)) + ' ' + esc(it.unit) + ' <small>(alert at ' + fmt(it.min) + (eq > 0 ? '; ' + fmt(eq) + ' expired not counted' : '') + ')</small></div>' +
+        batchRows(it) +
+        (f.expired ? '<span class="badge b-expired">EXPIRED BATCH</span>' : '') +
+        (f.low ? '<span class="badge b-low">' + (usable(it) <= 0 ? 'OUT' : 'LOW') + '</span>' : '') +
         (f.soon ? '<span class="badge b-soon">EXPIRING SOON</span>' : '') +
         ((!f.expired && !f.low && !f.soon) ? '<span class="badge b-ok">OK</span>' : '') +
-        '<div class="cbtn"><button class="q" data-a="minus" data-id="' + it.id + '">-</button>' +
-        '<button class="q" data-a="plus" data-id="' + it.id + '">+</button>' +
+        '<div class="cbtn"><button class="q" data-a="minus" data-id="' + it.id + '">-1</button>' +
+        '<button class="q" data-a="addb" data-id="' + it.id + '">Add stock</button>' +
         '<button data-a="used" data-id="' + it.id + '">Used</button>' +
         '<button data-a="edit" data-id="' + it.id + '">Edit</button>' +
         '<button data-a="del" data-id="' + it.id + '">Delete</button></div></div>';
@@ -314,9 +504,9 @@ textarea{height:150px}
 
   function buyAmount(it, f) {
     var need = 0;
-    if (f.low) { need = Math.max(num(it.min) * 2 - num(it.qty), 1); }
-    if (f.expired) { need = Math.max(need, num(it.qty), 1); }
-    return Math.round(need * 100) / 100;
+    if (f.low) { need = Math.max(num(it.min) * 2 - usable(it), 1); }
+    if (f.expired) { need = Math.max(need, expiredQty(it), 1); }
+    return r2(need);
   }
   function renderShop() {
     var i, it, f, h = '', t = 'Emergency food - to buy:\n', n = 0, amt;
@@ -329,8 +519,9 @@ textarea{height:150px}
       n++; amt = buyAmount(it, f);
       h += '<div class="card ' + (f.expired ? 'expired' : 'low') + '"><div class="nm">' + esc(it.name) + '</div>' +
         '<div class="qty">Buy about ' + fmt(amt) + ' ' + esc(it.unit) + '</div>' +
-        '<div class="meta">Have ' + fmt(it.qty) + (f.expired ? ' (expired)' : '') + '</div>' +
-        '<div class="cbtn"><button data-a="restock" data-id="' + it.id + '">I bought it</button></div></div>';
+        '<div class="meta">Usable ' + fmt(usable(it)) + (f.expired ? ', expired ' + fmt(expiredQty(it)) : '') + '</div>' +
+        '<div class="cbtn"><button data-a="restock" data-id="' + it.id + '">I bought it</button>' +
+        (f.expired ? '<button data-a="discard" data-id="' + it.id + '">Discard expired</button>' : '') + '</div></div>';
       t += '- ' + it.name + ': ' + fmt(amt) + ' ' + it.unit + '\n';
     }
     $('shoplist').innerHTML = n ? h : '<div class="empty">Nothing to buy. Your stock looks fine.</div>';
@@ -354,34 +545,53 @@ textarea{height:150px}
   function resetForm() {
     editingId = null;
     $('ftitle').innerHTML = 'Add item';
+    $('batchfields').style.display = 'block'; $('editnote').style.display = 'none';
     $('f-preset').value = '';
     $('f-code').value = '';
     $('f-name').value = ''; $('f-cat').value = CATS[0]; $('f-qty').value = '1';
     $('f-unit').value = 'pcs'; $('f-min').value = '0'; $('f-exp').value = ''; $('f-loc').value = '';
-  }
-  function find(id) {
-    for (var i = 0; i < data.items.length; i++) { if (data.items[i].id === id) { return i; } }
-    return -1;
+    $('f-bloc').value = ''; $('f-bcolor').value = ''; renderSwatches('f-bcolor');
   }
 
   function saveItem() {
     var name = $('f-name').value.replace(/^\s+|\s+$/g, '');
     if (!name) { alert('Please enter the item name.'); return; }
+    var code = $('f-code').value.replace(/[^0-9A-Za-z\-]/g, '');
+    var unit = $('f-unit').value.replace(/^\s+|\s+$/g, '') || 'pcs';
+    var min = Math.max(num($('f-min').value), 0), loc = $('f-loc').value.replace(/^\s+|\s+$/g, '');
+    var k, it, target, dc, dn;
+    if (editingId) {
+      k = find(editingId); if (k < 0) { return; } it = data.items[k];
+      if (code) {
+        dc = findCode(code, editingId);
+        if (dc >= 0 && !confirm('This barcode is already used by "' + data.items[dc].name + '". Save anyway?')) { return; }
+      }
+      it.name = name; it.code = code; it.cat = $('f-cat').value; it.unit = unit; it.min = min; it.loc = loc;
+      save(); resetForm(); showTab('stock'); toast('Saved');
+      return;
+    }
     var exp = normDate($('f-exp').value);
     if (exp === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
-    var qty = num($('f-qty').value); if (qty < 0) { qty = 0; }
-    var code = $('f-code').value.replace(/[^0-9A-Za-z\-]/g, '');
-    if (code) {
-      var dup = findCode(code, editingId);
-      if (dup >= 0 && !confirm('This barcode is already used by "' + data.items[dup].name + '". Save anyway?')) { return; }
+    var qty = Math.max(num($('f-qty').value), 0);
+    var bloc = $('f-bloc').value.replace(/^\s+|\s+$/g, ''), bcolor = $('f-bcolor').value;
+    target = -1;
+    dc = code ? findCode(code, null) : -1;
+    if (dc >= 0) {
+      if (confirm('Barcode already used by "' + data.items[dc].name + '".\nOK = add this as a new batch of that item.\nCancel = create a separate item.')) { target = dc; }
+    } else {
+      dn = findName(name, null);
+      if (dn >= 0 && confirm('"' + data.items[dn].name + '" already exists.\nOK = add this as a new batch of it (different expiry date).\nCancel = create a separate item.')) { target = dn; }
     }
-    var it = {
-      id: editingId || newId(), code: code, name: name, cat: $('f-cat').value,
-      qty: qty, unit: $('f-unit').value.replace(/^\s+|\s+$/g, '') || 'pcs',
-      min: Math.max(num($('f-min').value), 0), exp: exp, loc: $('f-loc').value.replace(/^\s+|\s+$/g, '')
-    };
-    if (editingId) { var k = find(editingId); if (k >= 0) { data.items[k] = it; } }
-    else { data.items.push(it); }
+    if (target >= 0) {
+      it = data.items[target];
+      if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor); }
+      if (code && !it.code) { it.code = code; }
+      save(); resetForm(); showTab('stock'); toast('Batch added');
+      return;
+    }
+    it = { id: newId(), code: code, name: name, cat: $('f-cat').value, unit: unit, min: min, loc: loc, batches: [] };
+    if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor); }
+    data.items.push(it);
     save(); resetForm(); showTab('stock'); toast('Saved');
   }
 
@@ -389,18 +599,25 @@ textarea{height:150px}
 
   /* ---------- Expiry reminders ---------- */
   function notifyDays() { var n = Math.round(num(data.settings.notifyDays)); return n >= 1 ? n : 7; }
-  function todayStr() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()); }
 
+  /* flat copy for the background worker: one row per batch that has an expiry date */
   function mirror() {
     try {
       if (!window.indexedDB) { return; }
+      var flat = [], i, j, it;
+      for (i = 0; i < data.items.length; i++) {
+        it = data.items[i];
+        for (j = 0; j < it.batches.length; j++) {
+          if (it.batches[j].exp) { flat.push({ name: it.name, exp: it.batches[j].exp }); }
+        }
+      }
       var r = indexedDB.open('efs', 1);
       r.onupgradeneeded = function () { r.result.createObjectStore('kv'); };
       r.onsuccess = function () {
         try {
           var db = r.result;
           var tx = db.transaction('kv', 'readwrite');
-          tx.objectStore('kv').put({ items: data.items, notifyDays: notifyDays() }, 'data');
+          tx.objectStore('kv').put({ items: flat, notifyDays: notifyDays() }, 'data');
           tx.oncomplete = function () { db.close(); };
         } catch (e) {}
       };
@@ -408,12 +625,16 @@ textarea{height:150px}
   }
 
   function alertItems() {
-    var out = { expired: [], soon: [] }, n = notifyDays(), i, d;
+    var out = { expired: [], soon: [] }, n = notifyDays(), i, j, it, d, b, hasExp;
     for (i = 0; i < data.items.length; i++) {
-      d = daysLeft(data.items[i].exp);
-      if (d === null) { continue; }
-      if (d < 0) { out.expired.push(data.items[i]); }
-      else if (d <= n) { out.soon.push({ it: data.items[i], d: d }); }
+      it = data.items[i]; hasExp = false;
+      for (j = 0; j < it.batches.length; j++) {
+        b = it.batches[j]; d = daysLeft(b.exp);
+        if (d === null) { continue; }
+        if (d < 0) { hasExp = true; }
+        else if (d <= n) { out.soon.push({ it: it, d: d }); }
+      }
+      if (hasExp) { out.expired.push(it); }
     }
     out.soon.sort(function (a, b) { return a.d - b.d; });
     return out;
@@ -427,7 +648,7 @@ textarea{height:150px}
     var a = alertItems(), h = '', i, nm = [];
     if (a.expired.length) {
       for (i = 0; i < a.expired.length; i++) { nm.push(a.expired[i].name); }
-      h += '<div class="alert"><b>Expired (' + a.expired.length + ')</b>' + esc(namesOf(nm, 6)) + '</div>';
+      h += '<div class="alert"><b>Expired stock (' + a.expired.length + ' items)</b>' + esc(namesOf(nm, 6)) + '</div>';
     }
     if (a.soon.length) {
       nm = [];
@@ -438,7 +659,7 @@ textarea{height:150px}
   }
   function notifyBody(a) {
     var parts = [];
-    if (a.expired.length) { parts.push(a.expired.length + ' expired'); }
+    if (a.expired.length) { parts.push(a.expired.length + ' item(s) with expired stock'); }
     if (a.soon.length) {
       var nm = [], i;
       for (i = 0; i < a.soon.length; i++) { nm.push(a.soon[i].it.name); }
@@ -503,25 +724,27 @@ textarea{height:150px}
   function makeICS() {
     var L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//EmergencyFoodStock//EN', 'CALSCALE:GREGORIAN'];
     var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
-    var mins = Math.max(notifyDays() * 1440 - 540, 0), i, it, n = 0;
+    var mins = Math.max(notifyDays() * 1440 - 540, 0), i, j, it, b, d, n = 0;
     for (i = 0; i < data.items.length; i++) {
       it = data.items[i];
-      var d = daysLeft(it.exp);
-      if (d === null || d < 0) { continue; }
-      n++;
-      L.push('BEGIN:VEVENT', 'UID:' + it.id + '@foodstock', 'DTSTAMP:' + stamp,
-        'DTSTART;VALUE=DATE:' + it.exp.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + nextDay(it.exp),
-        'SUMMARY:' + icsEsc('Expires: ' + it.name + ' (' + fmt(it.qty) + ' ' + it.unit + ')'),
-        'DESCRIPTION:' + icsEsc('Emergency food stock. Use it, rotate it, or replace it.'),
-        'BEGIN:VALARM', 'TRIGGER:-PT' + mins + 'M', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.name + ' expires on ' + it.exp), 'END:VALARM',
-        'END:VEVENT');
+      for (j = 0; j < it.batches.length; j++) {
+        b = it.batches[j]; d = daysLeft(b.exp);
+        if (d === null || d < 0) { continue; }
+        n++;
+        L.push('BEGIN:VEVENT', 'UID:' + b.id + '@foodstock', 'DTSTAMP:' + stamp,
+          'DTSTART;VALUE=DATE:' + b.exp.replace(/-/g, ''), 'DTEND;VALUE=DATE:' + nextDay(b.exp),
+          'SUMMARY:' + icsEsc('Expires: ' + it.name + ' (' + fmt(b.q) + ' ' + it.unit + (b.loc ? ', ' + b.loc : '') + (b.color ? ', ' + colorName(b.color) + ' tag' : '') + ')'),
+          'DESCRIPTION:' + icsEsc('Emergency food stock. Use it, rotate it, or replace it.'),
+          'BEGIN:VALARM', 'TRIGGER:-PT' + mins + 'M', 'ACTION:DISPLAY', 'DESCRIPTION:' + icsEsc(it.name + ' expires on ' + b.exp), 'END:VALARM',
+          'END:VEVENT');
+      }
     }
     L.push('END:VCALENDAR');
     return { text: L.join('\r\n'), count: n };
   }
   function downloadICS() {
     var r = makeICS();
-    if (!r.count) { alert('No items with a future expiry date to add.'); return; }
+    if (!r.count) { alert('No stock with a future expiry date to add.'); return; }
     try {
       var b = new Blob([r.text], { type: 'text/calendar' });
       var link = document.createElement('a');
@@ -536,18 +759,6 @@ textarea{height:150px}
   }
 
   /* ---------- Usage history ---------- */
-  function logUse(it, amt) {
-    if (amt <= 0) { return; }
-    if (!data.log) { data.log = []; }
-    data.log.push({ d: todayStr(), id: it.id, n: it.name, q: amt, u: it.unit });
-    if (data.log.length > 1000) { data.log = data.log.slice(data.log.length - 1000); }
-  }
-  function adjustQty(k, delta) {
-    var it = data.items[k], old = num(it.qty);
-    var nq = Math.max(Math.round((old + delta) * 100) / 100, 0);
-    if (nq < old) { logUse(it, Math.round((old - nq) * 100) / 100); }
-    it.qty = nq;
-  }
   function renderUsage() {
     var log = data.log || [], i, c = new Date(), tot = {}, names = [], id, k, rows = [], h = '';
     c.setDate(c.getDate() - 30);
@@ -559,13 +770,13 @@ textarea{height:150px}
     }
     for (i = 0; i < names.length; i++) {
       id = names[i]; k = find(id);
-      rows.push({ n: tot[id].n, u: tot[id].u, q: Math.round(tot[id].q * 100) / 100, have: k >= 0 ? num(data.items[k].qty) : null });
+      rows.push({ n: tot[id].n, u: tot[id].u, q: r2(tot[id].q), have: k >= 0 ? usable(data.items[k]) : null });
     }
     rows.sort(function (a, b) { return b.q - a.q; });
-    if (!rows.length) { $('usagebox').innerHTML = '<div class="hint">No usage recorded in the last 30 days. Use the "Used" or "-" buttons when you consume food.</div>'; return; }
+    if (!rows.length) { $('usagebox').innerHTML = '<div class="hint">No usage recorded in the last 30 days. Use the "Used" or "-1" buttons when you consume food.</div>'; return; }
     for (i = 0; i < rows.length; i++) {
       var per = rows[i].q / 30, left = '';
-      if (rows[i].have !== null && per > 0) { left = '<br>' + fmt(rows[i].have) + ' left lasts about ' + Math.round(rows[i].have / per) + ' days at this rate'; }
+      if (rows[i].have !== null && per > 0) { left = '<br>' + fmt(rows[i].have) + ' usable left lasts about ' + Math.round(rows[i].have / per) + ' days at this rate'; }
       h += '<div class="card"><div class="nm">' + esc(rows[i].n) + '</div><div class="meta">Used ' + fmt(rows[i].q) + ' ' + esc(rows[i].u) +
         ' (about ' + fmt(per * 7) + ' per week)' + left + '</div></div>';
     }
@@ -575,12 +786,6 @@ textarea{height:150px}
   /* ---------- Barcode scanning ---------- */
   var scanMode = 'main', scanStream = null, scanTimer = null, zxReader = null, scanBusy = false, lastCode = '', pendingName = '';
 
-  function findCode(code, exceptId) {
-    for (var i = 0; i < data.items.length; i++) {
-      if (data.items[i].code && data.items[i].code === code && data.items[i].id !== exceptId) { return i; }
-    }
-    return -1;
-  }
   function setStat(t) { $('scanstat').innerHTML = esc(t); }
   function getUM() {
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -683,7 +888,7 @@ textarea{height:150px}
       closeScanner();
       $('f-code').value = code;
       var d = findCode(code, editingId);
-      if (d >= 0) { alert('This barcode already belongs to "' + data.items[d].name + '".'); }
+      if (d >= 0) { alert('This barcode already belongs to "' + data.items[d].name + '". Saving will offer to add a new batch to it.'); }
       if (!$('f-name').value) {
         lookup(code, function (n) {
           if (n && !$('f-name').value) { $('f-name').value = n; toast('Found: ' + n); }
@@ -698,8 +903,9 @@ textarea{height:150px}
     var k = findCode(code), it, h;
     if (k >= 0) {
       it = data.items[k];
-      h = '<div class="sres"><div class="nm">' + esc(it.name) + '</div><div class="qty">In stock: ' + fmt(it.qty) + ' ' + esc(it.unit) + '</div>' +
-        '<button class="btn" data-a="sc-plus" data-id="' + it.id + '">+1 (add)</button>' +
+      h = '<div class="sres"><div class="nm">' + esc(it.name) + '</div><div class="qty">Usable: ' + fmt(usable(it)) + ' ' + esc(it.unit) + '</div>' +
+        batchRowsPlain(it) +
+        '<button class="btn" data-a="sc-plus" data-id="' + it.id + '">Add stock</button>' +
         '<button class="btn gray" data-a="sc-minus" data-id="' + it.id + '">-1 (use)</button>' +
         '<button class="btn blue" data-a="sc-edit" data-id="' + it.id + '">Edit</button>' +
         '<button class="btn gray" data-a="sc-next">Scan next</button></div>';
@@ -716,17 +922,88 @@ textarea{height:150px}
         '<button class="btn gray" data-a="sc-next">Scan next</button></div>';
     });
   }
+  function batchRowsPlain(it) {
+    var h = '', i, b;
+    for (i = 0; i < it.batches.length; i++) {
+      b = it.batches[i];
+      h += '<div class="meta">' + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ ' + esc(b.loc) : '') + ' - ' + (b.exp ? 'expires ' + esc(b.exp) : 'no expiry') + '</div>';
+    }
+    return h;
+  }
 
+  /* ---------- actions ---------- */
   function handle(a, id, el) {
-    var k, it, n;
-    if (a === 'used') {
+    var k, it, n, b, bi, q, e, nd, f, amt;
+    if (a === 'minus') {
+      k = find(id); if (k < 0) { return; }
+      var hint = nextHint(data.items[k]);
+      useFifo(k, 1); save(); renderAll();
+      if (hint) { toast('Take from: ' + hint); }
+    }
+    else if (a === 'dlg-save') { dlgSave(); }
+    else if (a === 'dlg-cancel') { closeDlg(); }
+    else if (a === 'pickc') { $(el.getAttribute('data-t')).value = el.getAttribute('data-c'); renderSwatches(el.getAttribute('data-t')); }
+    else if (a === 'addb') {
       k = find(id); if (k < 0) { return; } it = data.items[k];
-      var amt = prompt('How many ' + it.unit + ' of ' + it.name + ' did you use? (you have ' + fmt(it.qty) + ')', '1');
+      openDlg('Add stock: ' + it.name, it, { q: 1 }, false, function (v) {
+        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderAll(); toast('Stock added');
+      });
+    }
+    else if (a === 'used') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      amt = prompt('How many ' + it.unit + ' of ' + it.name + ' did you use? (usable now: ' + fmt(usable(it)) + ')', '1');
       if (amt === null) { return; }
       amt = num(amt); if (amt <= 0) { return; }
-      adjustQty(k, -Math.min(amt, num(it.qty)));
-      save(); renderAll(); toast('Recorded');
+      var h2 = nextHint(it);
+      useFifo(k, Math.min(amt, usable(it)));
+      save(); renderAll(); toast(h2 ? 'Recorded. Take from: ' + h2 : 'Recorded');
     }
+    else if (a === 'bedit') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      bi = findBatch(it, el.getAttribute('data-b')); if (bi < 0) { return; } b = it.batches[bi];
+      var bid = b.id;
+      openDlg('Edit batch: ' + it.name, it, { q: b.q, exp: b.exp, loc: b.loc, color: b.color }, true, function (v) {
+        var j = findBatch(it, bid); if (j < 0) { return; }
+        if (v.q <= 0) { it.batches.splice(j, 1); }
+        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].loc = v.loc; it.batches[j].color = v.color; }
+        sortBatches(it); save(); renderAll(); toast('Updated');
+      });
+    }
+    else if (a === 'bdel') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      bi = findBatch(it, el.getAttribute('data-b')); if (bi < 0) { return; }
+      if (confirm('Remove this batch of "' + it.name + '"?')) { it.batches.splice(bi, 1); save(); renderAll(); toast('Removed'); }
+    }
+    else if (a === 'edit') {
+      k = find(id); if (k < 0) { return; } it = data.items[k]; editingId = id;
+      $('ftitle').innerHTML = 'Edit item';
+      $('batchfields').style.display = 'none'; $('editnote').style.display = 'block';
+      $('f-code').value = it.code || '';
+      $('f-name').value = it.name; $('f-cat').value = it.cat;
+      $('f-unit').value = it.unit; $('f-min').value = it.min; $('f-loc').value = it.loc || '';
+      showTab('add');
+    }
+    else if (a === 'del') {
+      k = find(id); if (k < 0) { return; }
+      if (confirm('Delete "' + data.items[k].name + '" and all its batches?')) { data.items.splice(k, 1); save(); renderAll(); toast('Deleted'); }
+    }
+    else if (a === 'restock') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      f = flags(it);
+      openDlg('Bought: ' + it.name, it, { q: buyAmount(it, f) }, false, function (v) {
+        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderShop(); renderSummary(); toast('Stock added');
+      });
+    }
+    else if (a === 'discard') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      if (confirm('Remove all expired batches of "' + it.name + '"?')) {
+        for (n = it.batches.length - 1; n >= 0; n--) { if (isExp(it.batches[n])) { it.batches.splice(n, 1); } }
+        save(); renderShop(); renderAll(); toast('Expired stock removed');
+      }
+    }
+    else if (a === 'tab') { if (el.getAttribute('data-t') === 'add' && !editingId) { resetForm(); } showTab(el.getAttribute('data-t')); }
+    else if (a === 'save') { saveItem(); }
+    else if (a === 'cancel') { resetForm(); showTab('stock'); }
     else if (a === 'usage') { renderUsage(); }
     else if (a === 'notify') { enableNotify(); }
     else if (a === 'ics') { downloadICS(); }
@@ -735,51 +1012,22 @@ textarea{height:150px}
     else if (a === 'scanclose') { closeScanner(); }
     else if (a === 'scanuse') { scanBusy = false; onCode($('scancode').value); }
     else if (a === 'sc-next') { scanBusy = false; $('scanres').innerHTML = ''; $('scancode').value = ''; setStat('Point the camera at the next barcode'); }
-    else if (a === 'sc-plus' || a === 'sc-minus') {
+    else if (a === 'sc-plus') {
+      k = find(id); if (k < 0) { return; } it = data.items[k];
+      openDlg('Add stock: ' + it.name, it, { q: 1 }, false, function (v) {
+        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderAll(); showResult(lastCode); toast('Stock added');
+      });
+    }
+    else if (a === 'sc-minus') {
       k = find(id); if (k < 0) { return; }
-      adjustQty(k, a === 'sc-plus' ? 1 : -1);
-      save(); renderAll(); showResult(lastCode); toast('Updated');
+      var h3 = nextHint(data.items[k]);
+      useFifo(k, 1); save(); renderAll(); showResult(lastCode); toast(h3 ? 'Take from: ' + h3 : 'Updated');
     }
     else if (a === 'sc-edit') { closeScanner(); handle('edit', id, el); }
     else if (a === 'sc-new') {
       closeScanner(); resetForm();
       $('f-code').value = lastCode; $('f-name').value = pendingName || '';
       showTab('add');
-    }
-    else if (a === 'tab') { if (el.getAttribute('data-t') === 'add' && !editingId) { resetForm(); } showTab(el.getAttribute('data-t')); }
-    else if (a === 'save') { saveItem(); }
-    else if (a === 'cancel') { resetForm(); showTab('stock'); }
-    else if (a === 'plus' || a === 'minus') {
-      k = find(id); if (k < 0) { return; }
-      adjustQty(k, a === 'plus' ? 1 : -1);
-      save(); renderAll();
-    }
-    else if (a === 'edit') {
-      k = find(id); if (k < 0) { return; } it = data.items[k]; editingId = id;
-      $('ftitle').innerHTML = 'Edit item';
-      $('f-code').value = it.code || '';
-      $('f-name').value = it.name; $('f-cat').value = it.cat; $('f-qty').value = it.qty;
-      $('f-unit').value = it.unit; $('f-min').value = it.min; $('f-exp').value = it.exp || ''; $('f-loc').value = it.loc || '';
-      showTab('add');
-    }
-    else if (a === 'del') {
-      k = find(id); if (k < 0) { return; }
-      if (confirm('Delete "' + data.items[k].name + '"?')) { data.items.splice(k, 1); save(); renderAll(); toast('Deleted'); }
-    }
-    else if (a === 'restock') {
-      k = find(id); if (k < 0) { return; } it = data.items[k];
-      var f = flags(it), wasExp = f.expired;
-      var add = prompt('How many ' + it.unit + ' of ' + it.name + ' did you buy?', fmt(buyAmount(it, f)));
-      if (add === null) { return; }
-      add = num(add); if (add <= 0) { return; }
-      it.qty = wasExp ? add : Math.round((num(it.qty) + add) * 100) / 100;
-      var e = prompt('New expiry date (YYYY-MM-DD) or leave blank:', wasExp ? '' : (it.exp || ''));
-      if (e !== null) {
-        var nd = normDate(e);
-        if (nd === null) { alert('Date not understood, expiry unchanged.'); }
-        else if (nd !== '' || wasExp) { it.exp = nd; }
-      }
-      save(); renderShop(); renderSummary(); toast('Updated');
     }
     else if (a === 'selshop') { selectBox($('shoptext')); }
     else if (a === 'selbk') { selectBox($('bk')); }
@@ -794,9 +1042,9 @@ textarea{height:150px}
     else if (a === 'export') { $('bk').value = backupText(); toast('Backup text created - copy it'); }
     else if (a === 'download') {
       try {
-        var b = new Blob([backupText()], { type: 'application/json' });
+        var bl = new Blob([backupText()], { type: 'application/json' });
         var link = document.createElement('a');
-        link.href = (window.URL || window.webkitURL).createObjectURL(b);
+        link.href = (window.URL || window.webkitURL).createObjectURL(bl);
         link.download = 'food-stock-backup.json';
         document.body.appendChild(link); link.click(); document.body.removeChild(link);
       } catch (err) { alert('Download is not supported here. Use "Create backup text" and copy it instead.'); }
@@ -806,14 +1054,14 @@ textarea{height:150px}
         var d = JSON.parse($('bk').value);
         if (!d || !d.items || d.items.length === undefined) { throw new Error('bad'); }
         if (!confirm('Replace ALL current data with this backup?')) { return; }
-        data = d; if (!data.settings) { data.settings = { soonDays: 60 }; }
-        for (var i = 0; i < data.items.length; i++) { if (!data.items[i].id) { data.items[i].id = newId() + i; } }
+        migrate(d);
+        data = d;
         save(); renderAll(); toast('Restored ' + data.items.length + ' items');
       } catch (err2) { alert('That is not a valid backup text. Paste the full backup and try again.'); }
     }
     else if (a === 'wipe') {
       if (confirm('Delete ALL items? This cannot be undone.') && confirm('Really delete everything?')) {
-        data.items = []; save(); renderAll(); toast('All data deleted');
+        data.items = []; data.log = []; save(); renderAll(); toast('All data deleted');
       }
     }
   }
@@ -833,6 +1081,7 @@ textarea{height:150px}
   }
   $('app').onclick = delegate($('app'));
   $('scan').onclick = delegate($('scan'));
+  $('bmodal').onclick = delegate($('bmodal'));
   $('q').oninput = renderStock;
   $('q').onkeyup = renderStock;
   $('fcat').onchange = renderStock;
@@ -840,7 +1089,8 @@ textarea{height:150px}
   $('f-preset').onchange = function () {
     var v = this.value; if (v === '') { return; }
     var p = PRESETS[+v];
-    $('f-name').value = p[0]; $('f-cat').value = p[1]; $('f-unit').value = p[2]; $('f-min').value = p[3];
+    if (!$('f-name').value.replace(/^\s+|\s+$/g, '')) { $('f-name').value = p[0]; }
+    $('f-cat').value = p[1]; $('f-unit').value = p[2]; $('f-min').value = p[3];
   };
 
   fillSelects(); load(); resetForm(); renderAll();
