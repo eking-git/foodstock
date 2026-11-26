@@ -118,19 +118,21 @@ textarea{height:150px}
     <input type="text" id="f-code" placeholder="Scan or type the number">
     <button class="btn blue" data-a="scanform">Scan barcode</button>
     <div class="hint">After scanning, the product name is filled in automatically when online. Next time you scan this code, the app finds your item instantly.</div>
-    <label>Quick pick (optional)</label>
-    <select id="f-preset"></select>
-    <label>Item name</label>
-    <input type="text" id="f-name" placeholder="e.g. Canned sardines">
     <label>Category</label>
     <select id="f-cat"></select>
-    <div class="half"><label>Unit</label><input type="text" id="f-unit" placeholder="cans, kg, packs" value="pcs"></div>
+    <button class="btn gray" data-a="catgo" style="margin:6px 0 0;padding:8px 12px;font-size:14px">Add / edit categories</button>
+    <label>Item name</label>
+    <input type="text" id="f-name" placeholder="e.g. Canned sardines">
+    <div class="half"><label>Unit</label><select id="f-unit"></select></div>
     <div class="half r"><label>Alert when total is at or below</label><input type="number" id="f-min" step="any" min="0" value="0"></div>
     <div class="clear"></div>
     <div id="batchfields">
       <div class="half"><label>Quantity</label><input type="number" id="f-qty" step="any" min="0" value="1"></div>
       <div class="half r"><label>Expiry date</label><input type="date" id="f-exp" placeholder="YYYY-MM-DD"></div>
       <div class="clear"></div>
+      <label>Date received (default today)</label>
+      <input type="date" id="f-added" placeholder="YYYY-MM-DD">
+      <div class="hint">Used for first-in, first-out. For stock you already own, enter the date you got it.</div>
       <label>Batch color tag (optional)</label>
       <input type="hidden" id="f-bcolor" value="">
       <div id="f-bcolor-sw"></div>
@@ -157,7 +159,18 @@ textarea{height:150px}
     <input type="number" id="s-notify" min="1" value="7">
     <label>Show "expiring soon" badge within (days)</label>
     <input type="number" id="s-soon" min="1" value="60">
+    <label>Consume order (which batch to use first)</label>
+    <select id="s-order">
+      <option value="fifo">First added first (FIFO)</option>
+      <option value="fefo">Earliest expiry first</option>
+    </select>
     <button class="btn" data-a="savesettings">Save settings</button>
+    <h3 id="cat-h" style="margin:18px 0 6px">Categories</h3>
+    <div id="catlist"></div>
+    <label>New category</label>
+    <input type="text" id="newcat" placeholder="e.g. Spices, Medicine, Pet food">
+    <button class="btn" data-a="catadd">Add category</button>
+    <div class="hint">Renaming a category updates all its items. Deleting one moves its items to another category.</div>
     <h3 style="margin:18px 0 6px">Expiry reminders</h3>
     <button class="btn blue" data-a="notify">Enable notifications</button>
     <div class="hint" id="notifystat"></div>
@@ -197,6 +210,8 @@ textarea{height:150px}
   <div class="half r"><label>Expiry date</label><input type="date" id="d-exp" placeholder="YYYY-MM-DD"></div>
   <div class="clear"></div>
   <div class="hint">If no date picker appears, type YYYY-MM-DD. Leave blank if none.</div>
+  <label>Date received</label>
+  <input type="date" id="d-added" placeholder="YYYY-MM-DD">
   <label>Batch color tag (optional)</label>
   <input type="hidden" id="d-color" value="">
   <div id="d-color-sw"></div>
@@ -210,25 +225,9 @@ textarea{height:150px}
   var KEY = 'efs_v1';
   var data = { items: [], settings: { soonDays: 60, notifyDays: 7 }, log: [] };
   var editingId = null, idc = 0;
+  var DEFAULT_UNITS = ['pcs', 'cans', 'packs', 'bottles', 'boxes', 'bags', 'sacks', 'sachets', 'jars', 'pouches', 'cartons', 'cases', 'tubs', 'trays', 'bundles', 'bars', 'rolls', 'sticks', 'dozen', 'kg', 'g', 'lb', 'oz', 'liters', 'ml', 'gallons', 'cups'];
+  var prevUnit = 'pcs';
   var CATS = ['Rice & Grains', 'Canned Goods', 'Instant Meals', 'Water & Drinks', 'Milk & Baby', 'Cooking Essentials', 'Snacks & Energy', 'Other'];
-  var PRESETS = [
-    ['Rice', 'Rice & Grains', 'kg', 10],
-    ['Oatmeal', 'Rice & Grains', 'packs', 3],
-    ['Canned sardines', 'Canned Goods', 'cans', 10],
-    ['Canned corned beef', 'Canned Goods', 'cans', 6],
-    ['Canned tuna', 'Canned Goods', 'cans', 6],
-    ['Canned beans / vegetables', 'Canned Goods', 'cans', 4],
-    ['Instant noodles', 'Instant Meals', 'packs', 15],
-    ['Bottled drinking water', 'Water & Drinks', 'liters', 30],
-    ['Coffee / 3-in-1 sachets', 'Water & Drinks', 'sachets', 20],
-    ['Powdered milk', 'Milk & Baby', 'packs', 3],
-    ['Cooking oil', 'Cooking Essentials', 'liters', 2],
-    ['Salt', 'Cooking Essentials', 'kg', 1],
-    ['Sugar', 'Cooking Essentials', 'kg', 1],
-    ['Crackers / biscuits', 'Snacks & Energy', 'packs', 10],
-    ['Peanut butter', 'Snacks & Energy', 'jars', 2],
-    ['Dried fish', 'Snacks & Energy', 'packs', 4]
-  ];
 
   function $(id) { return document.getElementById(id); }
   function esc(s) {
@@ -242,17 +241,37 @@ textarea{height:150px}
   function todayStr() { var n = new Date(); return n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate()); }
 
   /* ---------- data ---------- */
-  function sortBatches(it) {
+  function cmpStr(x, y) { return x === y ? 0 : (x < y ? -1 : 1); }
+  function cmpExp(x, y) {
+    if (x === y) { return 0; }
+    if (!x) { return 1; }
+    if (!y) { return -1; }
+    return x < y ? -1 : 1;
+  }
+  /* order = 'fifo': oldest received first (unknown date counts as oldest); 'fefo': earliest expiry first */
+  function sortBatches(it, mode) {
+    var fifo = ((mode || (data.settings && data.settings.order)) !== 'fefo');
     it.batches.sort(function (a, b) {
-      if (a.exp === b.exp) { return 0; }
-      if (!a.exp) { return 1; }
-      if (!b.exp) { return -1; }
-      return a.exp < b.exp ? -1 : 1;
+      var c;
+      if (fifo) {
+        c = cmpStr(a.added || '', b.added || ''); if (c) { return c; }
+        c = (a.seq || 0) - (b.seq || 0); if (c) { return c; }
+      }
+      c = cmpExp(a.exp, b.exp); if (c) { return c; }
+      return cmpStr(a.added || '', b.added || '');
     });
+  }
+  function useFirstIdx(it) {
+    for (var i = 0; i < it.batches.length; i++) { if (!isExp(it.batches[i]) && it.batches[i].q > 0) { return i; } }
+    return -1;
   }
   function migrate(d) {
     var i, j, it, b;
     if (!d.settings) { d.settings = { soonDays: 60, notifyDays: 7 }; }
+    if (!d.cats || d.cats.length === undefined || !d.cats.length) { d.cats = CATS.slice(); }
+    if (!d.units || d.units.length === undefined) { d.units = []; }
+    if (!d.settings.order) { d.settings.order = 'fifo'; }
+    if (!d.seq) { d.seq = 0; }
     for (i = 0; i < d.items.length; i++) {
       it = d.items[i];
       if (!it.id) { it.id = newId(); }
@@ -265,10 +284,15 @@ textarea{height:150px}
         b = it.batches[j];
         if (!b.id) { b.id = newId(); }
         b.q = num(b.q); b.exp = b.exp || ''; b.loc = b.loc || ''; b.color = b.color || '';
+        b.added = b.added || ''; b.seq = num(b.seq); if (b.seq > d.seq) { d.seq = b.seq; }
         if (b.q <= 0) { it.batches.splice(j, 1); }
       }
       it.min = num(it.min); it.unit = it.unit || 'pcs'; it.cat = it.cat || 'Other'; it.name = it.name || 'Item';
-      sortBatches(it);
+      j = idxCI(d.cats, it.cat);
+      if (j < 0) { d.cats.push(it.cat); } else { it.cat = d.cats[j]; }
+      j = idxCI(unitList(d), it.unit);
+      if (j < 0) { d.units.push(it.unit); } else { it.unit = unitList(d)[j]; }
+      sortBatches(it, d.settings.order);
     }
     if (!d.log) { d.log = []; }
   }
@@ -355,14 +379,15 @@ textarea{height:150px}
     }
     return -1;
   }
-  function addBatch(it, q, exp, loc, color) {
+  function addBatch(it, q, exp, loc, color, added) {
     var i, b;
-    loc = loc || ''; color = color || '';
+    loc = loc || ''; color = color || ''; added = added || '';
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i];
-      if (b.exp === exp && (b.loc || '') === loc && (b.color || '') === color) { b.q = r2(b.q + q); sortBatches(it); return; }
+      if (b.exp === exp && (b.loc || '') === loc && (b.color || '') === color && (b.added || '') === added) { b.q = r2(b.q + q); sortBatches(it); return; }
     }
-    it.batches.push({ id: newId(), q: r2(q), exp: exp, loc: loc, color: color });
+    data.seq = (data.seq || 0) + 1;
+    it.batches.push({ id: newId(), q: r2(q), exp: exp, loc: loc, color: color, added: added, seq: data.seq });
     sortBatches(it);
   }
   function cleanBatches(it) {
@@ -427,6 +452,7 @@ textarea{height:150px}
     $('d-title').innerHTML = esc(title); $('d-unit').innerHTML = esc(it.unit);
     $('d-q').value = (d.q === undefined ? 1 : d.q); $('d-exp').value = d.exp || '';
     $('d-color').value = d.color || '';
+    $('d-added').value = (d.added === undefined ? todayStr() : d.added);
     renderSwatches('d-color'); $('bmodal').style.display = 'block';
     try { $('bmodal').scrollTop = 0; } catch (e) {}
   }
@@ -435,19 +461,61 @@ textarea{height:150px}
     var q = num($('d-q').value), nd = normDate($('d-exp').value);
     if (nd === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
     if (q <= 0 && !dlgZero) { alert('Please enter a quantity above 0.'); return; }
-    var v = { q: r2(q), exp: nd, loc: '', color: $('d-color').value }, cb = dlgCb;
+    var ad = normDate($('d-added').value);
+    if (ad === null) { alert('Date received not understood. Use YYYY-MM-DD.'); return; }
+    if (ad === '' && !dlgZero) { ad = todayStr(); }
+    var v = { q: r2(q), exp: nd, loc: '', color: $('d-color').value, added: ad }, cb = dlgCb;
     closeDlg(); if (cb) { cb(v); }
   }
 
   /* ---------- rendering ---------- */
-  function fillSelects() {
-    var i, h = '<option value="">All categories</option>', h2 = '', h3 = '<option value="">-- Quick pick common item --</option>';
-    for (i = 0; i < CATS.length; i++) {
-      h += '<option value="' + esc(CATS[i]) + '">' + esc(CATS[i]) + '</option>';
-      h2 += '<option value="' + esc(CATS[i]) + '">' + esc(CATS[i]) + '</option>';
+  function idxCI(arr, v) {
+    var l = String(v).toLowerCase(), i;
+    for (i = 0; i < arr.length; i++) { if (String(arr[i]).toLowerCase() === l) { return i; } }
+    return -1;
+  }
+  function unitList(d) { return DEFAULT_UNITS.concat(d.units || []); }
+  function setSel(sel, val) {
+    var i;
+    for (i = 0; i < sel.options.length; i++) { if (sel.options[i].value === val) { sel.selectedIndex = i; return; } }
+    if (sel.options.length) { sel.selectedIndex = 0; }
+  }
+  function fillCats() {
+    var i, c1 = $('fcat').value, c2 = $('f-cat').value, h = '<option value="">All categories</option>', h2 = '', o;
+    for (i = 0; i < data.cats.length; i++) {
+      o = '<option value="' + esc(data.cats[i]) + '">' + esc(data.cats[i]) + '</option>';
+      h += o; h2 += o;
     }
-    for (i = 0; i < PRESETS.length; i++) { h3 += '<option value="' + i + '">' + esc(PRESETS[i][0]) + '</option>'; }
-    $('fcat').innerHTML = h; $('f-cat').innerHTML = h2; $('f-preset').innerHTML = h3;
+    $('fcat').innerHTML = h; $('f-cat').innerHTML = h2;
+    setSel($('fcat'), c1); setSel($('f-cat'), c2);
+  }
+  function fillUnits() {
+    var cur = $('f-unit').value, list = unitList(data), h = '', i;
+    for (i = 0; i < list.length; i++) { h += '<option value="' + esc(list[i]) + '">' + esc(list[i]) + '</option>'; }
+    h += '<option value="__new">+ Add new unit...</option>';
+    $('f-unit').innerHTML = h;
+    setSel($('f-unit'), (cur && cur !== '__new') ? cur : 'pcs');
+  }
+  function ensureUnit(u) {
+    if (u && idxCI(unitList(data), u) < 0) { data.units.push(u); fillUnits(); }
+  }
+  function fillSelects() { fillCats(); fillUnits(); }
+  function catCount(name) {
+    var i, n = 0;
+    for (i = 0; i < data.items.length; i++) { if (data.items[i].cat === name) { n++; } }
+    return n;
+  }
+  function renderCats() {
+    var h = '', i, c;
+    for (i = 0; i < data.cats.length; i++) {
+      c = data.cats[i];
+      h += '<div class="brow"><b>' + esc(c) + '</b> (' + catCount(c) + ' items) ' +
+        '<button data-a="catren" data-i="' + i + '">Rename</button>' +
+        '<button data-a="catdel" data-i="' + i + '">Delete</button>' +
+        '<button data-a="catup" data-i="' + i + '">Up</button>' +
+        '<button data-a="catdn" data-i="' + i + '">Down</button></div>';
+    }
+    $('catlist').innerHTML = h;
   }
 
   function renderSummary() {
@@ -464,15 +532,24 @@ textarea{height:150px}
   }
 
   function batchRows(it) {
-    var h = '', i, b, d, cls, txt;
+    var h = '', i, b, d, cls, txt, ufi = useFirstIdx(it);
     if (!it.batches.length) { return '<div class="brow">No stock</div>'; }
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i]; d = daysLeft(b.exp);
       cls = (d !== null && d < 0) ? 'exp' : ((d !== null && d <= num(data.settings.soonDays)) ? 'soon' : '');
       txt = b.exp ? ('expires ' + esc(b.exp) + ' (' + relText(d) + ')') : 'no expiry date';
-      h += '<div class="brow ' + cls + '">' + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ <b>' + esc(b.loc) + '</b>' : '') + ' - ' + txt +
+      h += '<div class="brow ' + cls + '">' + (i === ufi ? '<span class="badge b-ok">USE FIRST</span> ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ <b>' + esc(b.loc) + '</b>' : '') + ' - ' + txt + (b.added ? ' - added ' + esc(b.added) : '') +
         ' <button data-a="bedit" data-id="' + it.id + '" data-b="' + b.id + '">Edit</button>' +
         '<button data-a="bdel" data-id="' + it.id + '" data-b="' + b.id + '">x</button></div>';
+    }
+    if (data.settings.order !== 'fefo' && ufi >= 0) {
+      var u = it.batches[ufi], m = -1, j;
+      for (j = 0; j < it.batches.length; j++) {
+        if (!isExp(it.batches[j]) && it.batches[j].q > 0 && it.batches[j].exp && (m < 0 || it.batches[j].exp < it.batches[m].exp)) { m = j; }
+      }
+      if (m >= 0 && m !== ufi && (!u.exp || it.batches[m].exp < u.exp)) {
+        h += '<div class="meta" style="color:#ef6c00">Note: another batch expires sooner than the one to use first.</div>';
+      }
     }
     return h;
   }
@@ -598,7 +675,7 @@ textarea{height:150px}
       $('tb-' + names[i]).className = (names[i] === t) ? 'on' : '';
     }
     if (t === 'shop') { renderShop(); }
-    if (t === 'backup') { $('s-soon').value = data.settings.soonDays; $('s-notify').value = notifyDays(); updateNotifyStat(); }
+    if (t === 'backup') { $('s-soon').value = data.settings.soonDays; $('s-notify').value = notifyDays(); $('s-order').value = data.settings.order || 'fifo'; updateNotifyStat(); renderCats(); }
     if (t === 'stock') { renderAll(); }
     try { window.scrollTo(0, 0); } catch (e) {}
   }
@@ -607,11 +684,10 @@ textarea{height:150px}
     editingId = null;
     $('ftitle').innerHTML = 'Add item';
     $('batchfields').style.display = 'block'; $('editnote').style.display = 'none';
-    $('f-preset').value = '';
     $('f-code').value = '';
-    $('f-name').value = ''; $('f-cat').value = CATS[0]; $('f-qty').value = '1';
-    $('f-unit').value = 'pcs'; $('f-min').value = '0'; $('f-exp').value = ''; $('f-loc').value = '';
-    $('f-bcolor').value = ''; renderSwatches('f-bcolor');
+    $('f-name').value = ''; setSel($('f-cat'), data.cats[0]); $('f-qty').value = '1';
+    setSel($('f-unit'), 'pcs'); $('f-min').value = '0'; $('f-exp').value = ''; $('f-loc').value = '';
+    $('f-bcolor').value = ''; renderSwatches('f-bcolor'); $('f-added').value = todayStr();
   }
 
   function saveItem() {
@@ -635,6 +711,9 @@ textarea{height:150px}
     if (exp === null) { alert('Expiry date not understood. Use YYYY-MM-DD, e.g. 2027-03-31.'); return; }
     var qty = Math.max(num($('f-qty').value), 0);
     var bloc = '', bcolor = $('f-bcolor').value;
+    var added = normDate($('f-added').value);
+    if (added === null) { alert('Date received not understood. Use YYYY-MM-DD, e.g. 2026-11-26.'); return; }
+    if (added === '') { added = todayStr(); }
     target = -1;
     dc = code ? findCode(code, null) : -1;
     if (dc >= 0) {
@@ -645,13 +724,13 @@ textarea{height:150px}
     }
     if (target >= 0) {
       it = data.items[target];
-      if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor); }
+      if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor, added); }
       if (code && !it.code) { it.code = code; }
       save(); resetForm(); showTab('stock'); toast('Batch added');
       return;
     }
     it = { id: newId(), code: code, name: name, cat: $('f-cat').value, unit: unit, min: min, loc: loc, batches: [] };
-    if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor); }
+    if (qty > 0) { addBatch(it, qty, exp, bloc, bcolor, added); }
     data.items.push(it);
     save(); resetForm(); showTab('stock'); toast('Saved');
   }
@@ -984,10 +1063,10 @@ textarea{height:150px}
     });
   }
   function batchRowsPlain(it) {
-    var h = '', i, b;
+    var h = '', i, b, ufi = useFirstIdx(it);
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i];
-      h += '<div class="meta">' + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ ' + esc(b.loc) : '') + ' - ' + (b.exp ? 'expires ' + esc(b.exp) : 'no expiry') + '</div>';
+      h += '<div class="meta">' + (i === ufi ? '[USE FIRST] ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ ' + esc(b.loc) : '') + ' - ' + (b.exp ? 'expires ' + esc(b.exp) : 'no expiry') + '</div>';
     }
     return h;
   }
@@ -1007,7 +1086,7 @@ textarea{height:150px}
     else if (a === 'addb') {
       k = find(id); if (k < 0) { return; } it = data.items[k];
       openDlg('Add stock: ' + it.name, it, { q: 1 }, false, function (v) {
-        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderAll(); toast('Stock added');
+        addBatch(it, v.q, v.exp, v.loc, v.color, v.added); save(); renderAll(); toast('Stock added');
       });
     }
     else if (a === 'used') {
@@ -1023,10 +1102,10 @@ textarea{height:150px}
       k = find(id); if (k < 0) { return; } it = data.items[k];
       bi = findBatch(it, el.getAttribute('data-b')); if (bi < 0) { return; } b = it.batches[bi];
       var bid = b.id;
-      openDlg('Edit batch: ' + it.name, it, { q: b.q, exp: b.exp, loc: b.loc, color: b.color }, true, function (v) {
+      openDlg('Edit batch: ' + it.name, it, { q: b.q, exp: b.exp, loc: b.loc, color: b.color, added: b.added }, true, function (v) {
         var j = findBatch(it, bid); if (j < 0) { return; }
         if (v.q <= 0) { it.batches.splice(j, 1); }
-        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].color = v.color; }
+        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].color = v.color; it.batches[j].added = v.added; }
         sortBatches(it); save(); renderAll(); toast('Updated');
       });
     }
@@ -1040,8 +1119,9 @@ textarea{height:150px}
       $('ftitle').innerHTML = 'Edit item';
       $('batchfields').style.display = 'none'; $('editnote').style.display = 'block';
       $('f-code').value = it.code || '';
-      $('f-name').value = it.name; $('f-cat').value = it.cat;
-      $('f-unit').value = it.unit; $('f-min').value = it.min; $('f-loc').value = it.loc || '';
+      ensureUnit(it.unit);
+      $('f-name').value = it.name; setSel($('f-cat'), it.cat);
+      setSel($('f-unit'), it.unit); $('f-min').value = it.min; $('f-loc').value = it.loc || '';
       showTab('add');
     }
     else if (a === 'del') {
@@ -1052,7 +1132,7 @@ textarea{height:150px}
       k = find(id); if (k < 0) { return; } it = data.items[k];
       f = flags(it);
       openDlg('Bought: ' + it.name, it, { q: buyAmount(it, f) }, false, function (v) {
-        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderShop(); renderSummary(); toast('Stock added');
+        addBatch(it, v.q, v.exp, v.loc, v.color, v.added); save(); renderShop(); renderSummary(); toast('Stock added');
       });
     }
     else if (a === 'discard') {
@@ -1076,7 +1156,7 @@ textarea{height:150px}
     else if (a === 'sc-plus') {
       k = find(id); if (k < 0) { return; } it = data.items[k];
       openDlg('Add stock: ' + it.name, it, { q: 1 }, false, function (v) {
-        addBatch(it, v.q, v.exp, v.loc, v.color); save(); renderAll(); showResult(lastCode); toast('Stock added');
+        addBatch(it, v.q, v.exp, v.loc, v.color, v.added); save(); renderAll(); showResult(lastCode); toast('Stock added');
       });
     }
     else if (a === 'sc-minus') {
@@ -1090,6 +1170,40 @@ textarea{height:150px}
       $('f-code').value = lastCode; $('f-name').value = pendingName || '';
       showTab('add');
     }
+    else if (a === 'catgo') { showTab('backup'); try { $('cat-h').scrollIntoView(); } catch (e8) {} }
+    else if (a === 'catadd') {
+      n = $('newcat').value.replace(/^\s+|\s+$/g, '');
+      if (!n) { alert('Type the new category name first.'); return; }
+      if (idxCI(data.cats, n) >= 0) { alert('That category already exists.'); return; }
+      data.cats.push(n); $('newcat').value = '';
+      save(); fillCats(); renderCats(); toast('Category added');
+    }
+    else if (a === 'catren') {
+      k = parseInt(el.getAttribute('data-i'), 10); var oldc = data.cats[k], dup, j;
+      n = prompt('Rename category "' + oldc + '" to:', oldc); if (n === null) { return; }
+      n = n.replace(/^\s+|\s+$/g, ''); if (!n || n === oldc) { return; }
+      dup = idxCI(data.cats, n);
+      if (dup >= 0 && dup !== k) { alert('That name is already used by another category.'); return; }
+      data.cats[k] = n;
+      for (j = 0; j < data.items.length; j++) { if (data.items[j].cat === oldc) { data.items[j].cat = n; } }
+      save(); fillCats(); renderCats(); renderAll(); toast('Renamed');
+    }
+    else if (a === 'catdel') {
+      k = parseInt(el.getAttribute('data-i'), 10); var delc = data.cats[k], tgt = '', cnt = catCount(delc), m;
+      if (data.cats.length < 2) { alert('You need at least one category.'); return; }
+      for (m = 0; m < data.cats.length; m++) { if (m !== k && data.cats[m].toLowerCase() === 'other') { tgt = data.cats[m]; } }
+      if (!tgt) { tgt = (k === 0) ? data.cats[1] : data.cats[0]; }
+      if (!confirm('Delete category "' + delc + '"?' + (cnt ? '\n' + cnt + ' item(s) will be moved to "' + tgt + '".' : ''))) { return; }
+      for (m = 0; m < data.items.length; m++) { if (data.items[m].cat === delc) { data.items[m].cat = tgt; } }
+      data.cats.splice(k, 1);
+      save(); fillCats(); renderCats(); renderAll(); toast('Category deleted');
+    }
+    else if (a === 'catup' || a === 'catdn') {
+      k = parseInt(el.getAttribute('data-i'), 10); var k2 = (a === 'catup') ? k - 1 : k + 1, tmp;
+      if (k2 < 0 || k2 >= data.cats.length) { return; }
+      tmp = data.cats[k]; data.cats[k] = data.cats[k2]; data.cats[k2] = tmp;
+      save(); fillCats(); renderCats();
+    }
     else if (a === 'selshop') { selectBox($('shoptext')); }
     else if (a === 'selbk') { selectBox($('bk')); }
     else if (a === 'savesettings') {
@@ -1097,6 +1211,8 @@ textarea{height:150px}
       data.settings.soonDays = n;
       n = Math.round(num($('s-notify').value)); if (n < 1) { n = 7; }
       data.settings.notifyDays = n;
+      data.settings.order = $('s-order').value;
+      for (n = 0; n < data.items.length; n++) { sortBatches(data.items[n]); }
       try { localStorage.removeItem('efs_last'); } catch (e9) {}
       save(); renderAll(); toast('Settings saved');
     }
@@ -1117,6 +1233,7 @@ textarea{height:150px}
         if (!confirm('Replace ALL current data with this backup?')) { return; }
         migrate(d);
         data = d;
+        fillSelects(); renderCats();
         save(); renderAll(); toast('Restored ' + data.items.length + ' items');
       } catch (err2) { alert('That is not a valid backup text. Paste the full backup and try again.'); }
     }
@@ -1150,11 +1267,16 @@ textarea{height:150px}
   $('s1').onchange = onSort;
   $('s2').onchange = onSort;
   $('sdir').onchange = onSort;
-  $('f-preset').onchange = function () {
-    var v = this.value; if (v === '') { return; }
-    var p = PRESETS[+v];
-    if (!$('f-name').value.replace(/^\s+|\s+$/g, '')) { $('f-name').value = p[0]; }
-    $('f-cat').value = p[1]; $('f-unit').value = p[2]; $('f-min').value = p[3];
+  $('f-unit').onfocus = function () { if (this.value && this.value !== '__new') { prevUnit = this.value; } };
+  $('f-unit').onchange = function () {
+    if (this.value !== '__new') { prevUnit = this.value; return; }
+    var u = prompt('New unit name (for example: trays, bundles, gallons):', '');
+    u = (u === null) ? '' : u.replace(/^\s+|\s+$/g, '');
+    if (!u) { setSel(this, prevUnit || 'pcs'); return; }
+    var ix = idxCI(unitList(data), u);
+    if (ix < 0) { data.units.push(u); save(); fillUnits(); setSel($('f-unit'), u); }
+    else { setSel(this, unitList(data)[ix]); }
+    prevUnit = this.value;
   };
 
   $('bkfile').onchange = function () {
@@ -1167,7 +1289,7 @@ textarea{height:150px}
     r.readAsText(f);
   };
 
-  fillSelects(); load(); loadSort(); resetForm(); renderAll();
+  load(); fillSelects(); loadSort(); resetForm(); renderAll();
   mirror(); checkNotify(); registerPeriodic();
   try {
     document.addEventListener('visibilitychange', function () { if (!document.hidden) { renderAll(); checkNotify(); } }, false);
