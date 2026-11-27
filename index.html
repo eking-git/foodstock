@@ -210,6 +210,8 @@ textarea{height:150px}
   <div class="half r"><label>Expiry date</label><input type="date" id="d-exp" placeholder="YYYY-MM-DD"></div>
   <div class="clear"></div>
   <div class="hint">If no date picker appears, type YYYY-MM-DD. Leave blank if none.</div>
+  <label>Storage location for this batch (optional)</label>
+  <input type="text" id="d-loc" placeholder="e.g. Cabinet 2, Bag 3">
   <label>Date received</label>
   <input type="date" id="d-added" placeholder="YYYY-MM-DD">
   <label>Batch color tag (optional)</label>
@@ -432,7 +434,7 @@ textarea{height:150px}
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i];
       if (isExp(b) || b.q <= 0) { continue; }
-      var where = it.loc || b.loc || '';
+      var where = b.loc || it.loc || '';
       return where + (b.color ? (where ? ' ' : '') + '(' + colorName(b.color) + ' tag)' : '');
     }
     return '';
@@ -453,6 +455,7 @@ textarea{height:150px}
     $('d-q').value = (d.q === undefined ? 1 : d.q); $('d-exp').value = d.exp || '';
     $('d-color').value = d.color || '';
     $('d-added').value = (d.added === undefined ? todayStr() : d.added);
+    $('d-loc').value = (d.loc === undefined ? (it.loc || '') : d.loc);
     renderSwatches('d-color'); $('bmodal').style.display = 'block';
     try { $('bmodal').scrollTop = 0; } catch (e) {}
   }
@@ -464,7 +467,7 @@ textarea{height:150px}
     var ad = normDate($('d-added').value);
     if (ad === null) { alert('Date received not understood. Use YYYY-MM-DD.'); return; }
     if (ad === '' && !dlgZero) { ad = todayStr(); }
-    var v = { q: r2(q), exp: nd, loc: '', color: $('d-color').value, added: ad }, cb = dlgCb;
+    var v = { q: r2(q), exp: nd, loc: $('d-loc').value.replace(/^\s+|\s+$/g, ''), color: $('d-color').value, added: ad }, cb = dlgCb;
     closeDlg(); if (cb) { cb(v); }
   }
 
@@ -538,7 +541,7 @@ textarea{height:150px}
       b = it.batches[i]; d = daysLeft(b.exp);
       cls = (d !== null && d < 0) ? 'exp' : ((d !== null && d <= num(data.settings.soonDays)) ? 'soon' : '');
       txt = b.exp ? ('expires ' + esc(b.exp) + ' (' + relText(d) + ')') : 'no expiry date';
-      h += '<div class="brow ' + cls + '">' + (i === ufi ? '<span class="badge b-ok">USE FIRST</span> ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ <b>' + esc(b.loc) + '</b>' : '') + ' - ' + txt + (b.added ? ' - added ' + esc(b.added) : '') +
+      h += '<div class="brow ' + cls + '">' + (i === ufi ? '<span class="badge b-ok">USE FIRST</span> ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc && b.loc !== it.loc ? ' @ <b>' + esc(b.loc) + '</b>' : '') + ' - ' + txt + (b.added ? ' - added ' + esc(b.added) : '') +
         ' <button data-a="bedit" data-id="' + it.id + '" data-b="' + b.id + '">Edit</button>' +
         '<button data-a="bdel" data-id="' + it.id + '" data-b="' + b.id + '">x</button></div>';
     }
@@ -1066,7 +1069,7 @@ textarea{height:150px}
     var h = '', i, b, ufi = useFirstIdx(it);
     for (i = 0; i < it.batches.length; i++) {
       b = it.batches[i];
-      h += '<div class="meta">' + (i === ufi ? '[USE FIRST] ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc ? ' @ ' + esc(b.loc) : '') + ' - ' + (b.exp ? 'expires ' + esc(b.exp) : 'no expiry') + '</div>';
+      h += '<div class="meta">' + (i === ufi ? '[USE FIRST] ' : '') + dotHtml(b.color) + fmt(b.q) + ' ' + esc(it.unit) + (b.loc && b.loc !== it.loc ? ' @ ' + esc(b.loc) : '') + ' - ' + (b.exp ? 'expires ' + esc(b.exp) : 'no expiry') + '</div>';
     }
     return h;
   }
@@ -1105,7 +1108,7 @@ textarea{height:150px}
       openDlg('Edit batch: ' + it.name, it, { q: b.q, exp: b.exp, loc: b.loc, color: b.color, added: b.added }, true, function (v) {
         var j = findBatch(it, bid); if (j < 0) { return; }
         if (v.q <= 0) { it.batches.splice(j, 1); }
-        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].color = v.color; it.batches[j].added = v.added; }
+        else { it.batches[j].q = v.q; it.batches[j].exp = v.exp; it.batches[j].loc = v.loc; it.batches[j].color = v.color; it.batches[j].added = v.added; }
         sortBatches(it); save(); renderAll(); toast('Updated');
       });
     }
